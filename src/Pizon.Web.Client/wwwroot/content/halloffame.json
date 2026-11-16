@@ -1,0 +1,18 @@
+// PIZON BBS Hall of Fame: hand-picked legends shown above the recent callers in [5].
+// clearance is a made-up access level. Entries marked TODO-SYSOP are placeholders. See docs/content.md.
+{
+  "entries": [
+    {
+      "handle": "SysOp",
+      "clearance": "LVL 255",
+      "note": "Built this place. Fixes the modem with a hammer.",
+      "url": null
+    },
+    {
+      "handle": "TODO-SYSOP",
+      "clearance": "LVL 100",
+      "note": "TODO-SYSOP: a friend, mentor or hero worth listing",
+      "url": null
+    }
+  ]
+}

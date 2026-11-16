@@ -1,0 +1,9 @@
+# Caddy gets and renews Let's Encrypt certificates automatically. WebSockets (SignalR) need no extra config.
+pizon.com {
+	encode zstd gzip
+	reverse_proxy web:8080
+}
+
+www.pizon.com {
+	redir https://pizon.com{uri} permanent
+}

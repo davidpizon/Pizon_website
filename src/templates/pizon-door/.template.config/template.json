@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "PIZON BBS",
+  "classifications": [ "PIZON", "BBS", "Door" ],
+  "identity": "Pizon.Doors.Template",
+  "name": "PIZON BBS door",
+  "shortName": "pizon-door",
+  "sourceName": "Pizon.Doors.TemplateDoor",
+  "preferNameDirectory": true,
+  "tags": {
+    "language": "C#",
+    "type": "project"
+  },
+  "symbols": {
+    "doorId": {
+      "type": "parameter",
+      "datatype": "text",
+      "defaultValue": "mydoor",
+      "replaces": "template-door-id",
+      "description": "The door id used in doors.json and for scores (lowercase, no spaces)."
+    }
+  }
+}

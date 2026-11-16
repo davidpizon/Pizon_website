@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <!-- The Modem Oracle door. A Razor class library only so it can ship its own wwwroot assets. -->
+  <ItemGroup>
+    <SupportedPlatform Include="browser" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Pizon.Doors.Sdk\Pizon.Doors.Sdk.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Pizon.Doors.Oracle.Tests" />
+  </ItemGroup>
+
+</Project>

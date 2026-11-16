@@ -1,0 +1,18 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.6.5">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Use the installed Aspire CLI bundle (DCP + dashboard); without it the SDK raises ASPIRE010. -->
+    <AspireUseCliBundle>true</AspireUseCliBundle>
+    <UserSecretsId>5ff1d38b-66fd-4a50-9362-08a5841892ac</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Aspire.Hosting.SQLite" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Pizon.Web\Pizon.Web.csproj" />
+  </ItemGroup>
+
+</Project>

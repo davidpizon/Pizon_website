@@ -1,0 +1,55 @@
+// PIZON BBS file areas: the SysOp's favorite links, dressed up as a download directory.
+// name: an 8.3-style filename; size: a made-up byte count; description: 45 characters or fewer.
+// Entries marked TODO-SYSOP are placeholders for David to replace. See docs/content.md.
+{
+  "areas": [
+    {
+      "name": "TOOLS",
+      "description": "Utilities the SysOp actually uses",
+      "files": [
+        {
+          "name": "TODO.TXT",
+          "size": 1024,
+          "description": "TODO-SYSOP: a favorite tool",
+          "url": null
+        }
+      ]
+    },
+    {
+      "name": "READING",
+      "description": "Articles, blogs and other words",
+      "files": [
+        {
+          "name": "NOWNOW.HTM",
+          "size": 4096,
+          "description": "The /now page movement",
+          "url": "https://nownownow.com/about"
+        },
+        {
+          "name": "TODO.TXT",
+          "size": 2048,
+          "description": "TODO-SYSOP: a favorite read",
+          "url": null
+        }
+      ]
+    },
+    {
+      "name": "FUN",
+      "description": "Time well wasted",
+      "files": [
+        {
+          "name": "TEXTFILE.ZIP",
+          "size": 1440000,
+          "description": "textfiles.com - BBS-era text archive",
+          "url": "http://www.textfiles.com/"
+        },
+        {
+          "name": "16COLORS.ANS",
+          "size": 65536,
+          "description": "16colo.rs - the ANSI art archive",
+          "url": "https://16colo.rs/"
+        }
+      ]
+    }
+  ]
+}

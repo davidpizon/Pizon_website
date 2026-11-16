@@ -1,0 +1,20 @@
+// PIZON BBS door manifest. The [4] menu is built from this list, and the server reads it to validate
+// score posts. "enabled": false hides a door without a rebuild. See docs/doors.md.
+{
+  "doors": [
+    {
+      "id": "oracle",
+      "title": "The Modem Oracle",
+      "description": "Ask the spirits of the phone line a question. Same question, same day, same answer.",
+      "assemblies": [ "Pizon.Doors.Oracle.wasm" ],
+      "entryType": "Pizon.Doors.Oracle.ModemOracle",
+      "enabled": true,
+      "requiresAuth": false,
+      "scored": true,
+      "scoreMode": "dailyCount",
+      "maxScore": 100,
+      "scoreTitle": "MOST DEVOTED SEEKERS",
+      "intro": "anim/intro.json"
+    }
+  ]
+}

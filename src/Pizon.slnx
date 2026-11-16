@@ -1,0 +1,21 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/tests/">
+    <Project Path="tests/Pizon.AppHost.Tests/Pizon.AppHost.Tests.csproj" />
+    <Project Path="tests/Pizon.Conventions.Tests/Pizon.Conventions.Tests.csproj" />
+    <Project Path="tests/Pizon.Doors.Oracle.Tests/Pizon.Doors.Oracle.Tests.csproj" />
+    <Project Path="tests/Pizon.Doors.Sdk.Tests/Pizon.Doors.Sdk.Tests.csproj" />
+    <Project Path="tests/Pizon.Web.Client.Tests/Pizon.Web.Client.Tests.csproj" />
+    <Project Path="tests/Pizon.Web.Tests/Pizon.Web.Tests.csproj" />
+  </Folder>
+  <Project Path="Pizon.AppHost/Pizon.AppHost.csproj" />
+  <Project Path="Pizon.Doors.Oracle/Pizon.Doors.Oracle.csproj" />
+  <Project Path="Pizon.Doors.Sdk/Pizon.Doors.Sdk.csproj" />
+  <Project Path="Pizon.ServiceDefaults/Pizon.ServiceDefaults.csproj" />
+  <Project Path="Pizon.Web.Client/Pizon.Web.Client.csproj" />
+  <Project Path="Pizon.Web/Pizon.Web.csproj" />
+</Solution>

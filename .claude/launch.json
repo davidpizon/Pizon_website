@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/Pizon.Web", "--launch-profile", "http"],
+      "port": 5155
+    },
+    {
+      "name": "apphost",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/Pizon.AppHost", "--launch-profile", "http"],
+      "port": 15088
+    }
+  ]
+}

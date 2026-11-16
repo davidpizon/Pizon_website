@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Repository convention checks: documentation for Razor components, no warning suppressions,
+       and the JavaScript palette matching the C# one. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Pizon.Doors.Sdk\Pizon.Doors.Sdk.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,262 @@
+/* PIZON BBS - terminal, CRT and page styles.
+   Palette classes (.f0-.f255 / .b0-.b255) and --c0..--c255 are injected by js/terminal/index.js
+   from the 256-color palette, so they always match Palette256.cs. */
+
+/* IBM VGA 8x16 from VileR's Ultimate Oldschool PC Font Pack (int10h.org), CC BY-SA 4.0.
+   Each glyph cell is 0.5em x 1em, so block characters tile with no gaps. See fonts/LICENSE.txt. */
+@font-face {
+    font-family: "Web437 IBM VGA 8x16";
+    src: url("fonts/Web437_IBM_VGA_8x16.woff") format("woff");
+    font-display: block;
+}
+
+:root {
+    --bbs-font: "Web437 IBM VGA 8x16", "Px437 IBM VGA 8x16", "Cascadia Mono", Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace;
+    --bbs-bg: #000;
+    --bbs-fg: #c0c0c0;
+    --bbs-accent: #00ffff;
+    /* 80 columns of 0.5em (VGA 8x16) plus 1.2em padding must fit the width; 25 rows of 1em plus
+       padding must fit the height. */
+    --term-size: clamp(8px, min(calc((100vw - 32px) / 41.5), calc((100dvh - 24px) / 26.5)), 28px);
+    color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    min-height: 100%;
+    background: var(--bbs-bg);
+    color: var(--bbs-fg);
+    font-family: var(--bbs-font);
+}
+
+body {
+    overflow-x: hidden;
+}
+
+a {
+    color: var(--bbs-accent);
+}
+
+.visually-hidden {
+    position: absolute !important;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.skip-link {
+    position: absolute;
+    left: 16px;
+    top: -40px;
+    z-index: 10;
+    padding: 4px 8px;
+    background: #000080;
+    color: #ffff00;
+}
+
+.skip-link:focus {
+    top: 8px;
+}
+
+/* ---- Boot message (shown while WebAssembly downloads; removed by the terminal) ---- */
+.boot {
+    padding: 24px 16px;
+    color: #808080;
+}
+
+.boot pre {
+    margin: 0;
+    font: inherit;
+    animation: boot-blink 1.2s steps(2, start) infinite;
+}
+
+@keyframes boot-blink {
+    to {
+        opacity: 0.55;
+    }
+}
+
+/* ---- The BBS page ---- */
+.bbs {
+    display: flex;
+    min-height: 100dvh;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 16px;
+}
+
+.crt {
+    position: relative;
+    max-width: 100%;
+    overflow-x: auto;
+    padding: calc(var(--term-size) * 0.6);
+    border-radius: 6px;
+    background: #000;
+    box-shadow: 0 0 0 1px #1a1a1a, 0 0 40px rgba(0, 255, 255, 0.06);
+}
+
+/* Subtle scanlines: a faint repeating gradient over the screen. */
+.crt::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    background: repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0) 0, rgba(0, 0, 0, 0) 2px, rgba(0, 0, 0, 0.06) 3px);
+}
+
+.term {
+    width: 80ch;
+    font-family: var(--bbs-font);
+    font-size: var(--term-size);
+    line-height: 1;
+    white-space: pre;
+    color: var(--bbs-fg);
+    outline: none;
+    /* Soft phosphor glow in each cell's own color. */
+    text-shadow: 0 0 calc(var(--term-size) * 0.25) currentColor;
+    font-variant-ligatures: none;
+}
+
+.term[hidden] {
+    display: none;
+}
+
+.term-row {
+    position: relative;
+    height: 1em;
+    overflow: hidden;
+}
+
+.term-row > span,
+.term-row > a,
+.term-row > button {
+    display: inline;
+}
+
+/* Hotspots are real buttons styled as text, so clicking an option is the same as pressing its key. */
+.term-hot {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    font: inherit;
+    line-height: inherit;
+    letter-spacing: inherit;
+    text-shadow: inherit;
+    cursor: pointer;
+    white-space: pre;
+}
+
+.term-hot:hover,
+.term-hot:focus-visible {
+    outline: 1px dotted currentColor;
+    outline-offset: -1px;
+    filter: brightness(1.35);
+}
+
+.term-link {
+    text-decoration: underline dotted;
+    text-underline-offset: 0.15em;
+}
+
+/* Blinking block cursor at the cursor column. */
+.has-cursor::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: calc(var(--cursor-col, 0) * 1ch);
+    width: 1ch;
+    height: 1em;
+    background: var(--bbs-fg);
+    opacity: 0.8;
+    animation: cursor-blink 1s steps(2, start) infinite;
+}
+
+@keyframes cursor-blink {
+    to {
+        visibility: hidden;
+    }
+}
+
+/* The RIPscrip panel: 640x350 internal pixels, scaled crisply to the terminal's width. */
+.rip {
+    display: block;
+    width: calc(var(--term-size) * 40);
+    max-width: 100%;
+    aspect-ratio: 640 / 350;
+    image-rendering: pixelated;
+    cursor: pointer;
+}
+
+.rip[hidden] {
+    display: none;
+}
+
+/* Visually hidden input focused in line mode so phones show a keyboard. */
+.mobile-kbd {
+    position: fixed;
+    left: 0;
+    bottom: 0;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    border: 0;
+    padding: 0;
+    font-size: 16px; /* stops iOS zooming in on focus */
+}
+
+/* ---- Plain pages (404, error) ---- */
+.plain {
+    max-width: 80ch;
+    margin: 2rem auto;
+    padding: 0 16px;
+}
+
+.plain h1 {
+    color: #ffff00;
+    font-size: 1.2rem;
+}
+
+/* ---- Blazor's error banner, in character ---- */
+#blazor-error-ui {
+    display: none;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1000;
+    padding: 8px 16px;
+    background: #800000;
+    color: #ffffff;
+    font-family: var(--bbs-font);
+}
+
+#blazor-error-ui .dismiss {
+    position: absolute;
+    right: 16px;
+    cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce), (prefers-contrast: more) {
+    .crt::after {
+        display: none;
+    }
+
+    .term {
+        text-shadow: none;
+    }
+
+    .has-cursor::after,
+    .boot pre {
+        animation: none;
+    }
+}

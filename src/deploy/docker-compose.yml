@@ -1,0 +1,53 @@
+# Production stack on the VPS (deploy.ps1 copies this folder to ~/pizon).
+#   web    - the BBS (image loaded by deploy.ps1); SQLite on the bbs-data volume
+#   caddy  - reverse proxy with automatic HTTPS for pizon.com (www redirects to the apex)
+#   backup - nightly SQLite .backup into ./backups, keeping 14 days (backup.sh)
+# Secrets come from ~/pizon/.env, which is never committed: Discord__ClientId, Discord__ClientSecret,
+# SysOp__DiscordUserId, Notify__WebhookUrl (see .env.example).
+
+services:
+  web:
+    image: pizon-bbs:${PIZON_TAG:-latest}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+    volumes:
+      - bbs-data:/app/App_Data
+    expose:
+      - "8080"
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      - web
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    logging: *logging
+
+  backup:
+    image: alpine:3.22
+    restart: unless-stopped
+    volumes:
+      - bbs-data:/data:ro
+      - ./backups:/backups
+      - ./backup.sh:/etc/periodic/daily/bbs-backup:ro
+    entrypoint: ["/bin/sh", "-c", "apk add --no-cache sqlite >/dev/null && exec crond -f -l 8"]
+    logging: *logging
+
+volumes:
+  bbs-data:
+  caddy-data:
+  caddy-config:

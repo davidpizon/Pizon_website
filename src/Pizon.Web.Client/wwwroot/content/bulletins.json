@@ -1,0 +1,48 @@
+// PIZON BBS bulletins. Text lines use pipe codes (|07 gray, |11 yellow, |14 cyan, |15 white,
+// |#NNN 256-color). Lines marked TODO-SYSOP are placeholders for David to replace. See docs/content.md.
+{
+  "sysop": "David Pizon",
+  "mood": "TODO-SYSOP: mood",
+  "location": "TODO-SYSOP: location",
+  "tagline": "A personal BBS since 2026 (spiritually since 1993)",
+  "bulletins": [
+    {
+      "number": 1,
+      "title": "Current Directives (/now)",
+      "updated": "TODO-SYSOP: date",
+      "lines": [
+        "|11What the SysOp is up to right now.|07",
+        "",
+        "|14WORKING ON|07",
+        "  |08-|07 TODO-SYSOP: a project you're working on",
+        "  |08-|07 This very BBS, obviously",
+        "",
+        "|14READING|07",
+        "  |08-|07 TODO-SYSOP: a book",
+        "",
+        "|14PLAYING|07",
+        "  |08-|07 TODO-SYSOP: a game",
+        "",
+        "|14LEARNING|07",
+        "  |08-|07 TODO-SYSOP: a skill",
+        "",
+        "|08This is a /now page. See nownownow.com for the idea.|07"
+      ]
+    },
+    {
+      "number": 2,
+      "title": "About the SysOp",
+      "updated": "",
+      "animation": "content/anim/sysopcam.json",
+      "lines": [
+        "|11SysOp:|15 David Pizon|07",
+        "",
+        "TODO-SYSOP: a few sentences about yourself. Who you are, what you do, what you care about.",
+        "",
+        "TODO-SYSOP: a second paragraph - background, interests, what callers should know.",
+        "",
+        "|08Want to say hi? Sign in and use |14[P]|08 Page SysOp, or leave a message on the wall.|07"
+      ]
+    }
+  ]
+}

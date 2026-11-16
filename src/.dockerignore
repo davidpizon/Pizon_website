@@ -1,0 +1,14 @@
+# Keep the Docker build context small: only what Pizon.Web needs to publish.
+**/bin/
+**/obj/
+**/TestResults/
+**/App_Data/
+**/*.db
+**/*.db-shm
+**/*.db-wal
+tests/
+deploy/
+Pizon.AppHost/
+templates/
+.config/
+coverage.ps1

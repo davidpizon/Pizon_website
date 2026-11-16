@@ -426,3 +426,14 @@ FodyWeavers.xsd
 
 # Official VS Code C# Dev Kit Extension exclusion
 #*.lscache
+
+# PIZON BBS local data (SQLite, data-protection keys) and secrets
+src/Pizon.Web/App_Data/
+*.db
+*.db-shm
+*.db-wal
+.env
+src/TestResults/
+
+# Database backups pulled from the server (deploy/pull-backup.ps1)
+src/deploy/backups/

@@ -1,0 +1,15 @@
+@page "/"
+@page "/sysop"
+
+<PageTitle>PIZON BBS</PageTitle>
+
+<main class="bbs">
+    <h1 class="visually-hidden">PIZON BBS - the personal bulletin board of David Pizon</h1>
+    <a class="skip-link" href="/plain">Skip to plain-text version</a>
+    <div class="crt">
+        <div class="term" role="log" aria-live="polite" aria-label="PIZON BBS terminal" tabindex="0" @ref="screen"></div>
+        <canvas class="rip" width="640" height="350" hidden @ref="ripCanvas"></canvas>
+    </div>
+    <input class="mobile-kbd" type="text" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false"
+           aria-label="Keyboard input" @ref="mobileInput" />
+</main>

@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The Door SDK: the only thing a door project may reference. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Pizon.Doors.Sdk.Tests" />
+  </ItemGroup>
+
+</Project>

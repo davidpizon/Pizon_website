@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <!-- A PIZON BBS door. A Razor class library only so it can ship its own wwwroot assets
+       (served at _content/Pizon.Doors.TemplateDoor/). Register it in the client and doors.json:
+       see docs/doors.md. -->
+  <ItemGroup>
+    <SupportedPlatform Include="browser" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Pizon.Doors.Sdk\Pizon.Doors.Sdk.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,12 @@
+﻿@page "/Error"
+
+<PageTitle>LINE NOISE - PIZON BBS</PageTitle>
+
+<main class="plain">
+    <h1>LINE NOISE</h1>
+    <p>Something went wrong on the SysOp's end. <a href="/">Redial PIZON BBS</a>.</p>
+    @if (RequestId is not null)
+    {
+        <p>Request ID: <code>@RequestId</code></p>
+    }
+</main>

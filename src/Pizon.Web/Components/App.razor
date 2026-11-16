@@ -1,0 +1,30 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="PIZON BBS - the personal bulletin board of David Pizon. Dial in." />
+    <meta name="theme-color" content="#000000" />
+    <title>PIZON BBS</title>
+    <BasePath />
+    <ResourcePreloader />
+    <link rel="preload" href="fonts/Web437_IBM_VGA_8x16.woff" as="font" type="font/woff" crossorigin />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <ImportMap />
+    <HeadOutlet @rendermode="RenderMode" />
+</head>
+
+<body>
+    <div id="boot" class="boot" aria-live="polite">
+        <pre>PIZON TERMINAL v1.0
+Loading modem drivers..........</pre>
+        <noscript>
+            <p>This BBS needs JavaScript to dial in. Read the <a href="/plain">plain-text version</a> instead.</p>
+        </noscript>
+    </div>
+    <Routes @rendermode="RenderMode" />
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+</body>
+
+</html>

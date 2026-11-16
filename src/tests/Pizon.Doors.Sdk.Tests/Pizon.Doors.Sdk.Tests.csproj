@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Pizon.Doors.Sdk\Pizon.Doors.Sdk.csproj" />
+  </ItemGroup>
+
+</Project>

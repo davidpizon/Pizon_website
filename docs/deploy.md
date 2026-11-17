@@ -53,6 +53,7 @@ ssh bbs@<vps-ip>
 
 Create `~/pizon/.env` from `src/deploy/.env.example` and fill in `Discord__ClientId`,
 `Discord__ClientSecret`, `SysOp__DiscordUserId` and `Notify__WebhookUrl`. It is never committed.
+Non-secret settings can go there too, such as `Terminal__GlowBlur` (see [content.md](content.md#terminal-glow)).
 
 Locally, the same values go in user-secrets:
 

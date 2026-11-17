@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Security.Claims;
 using System.Text.Json;
@@ -10,6 +11,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Pizon.Doors.Sdk;
 using Pizon.Web.Auth;
+using Pizon.Web.Components;
 using Pizon.Web.Data;
 using Pizon.Web.Endpoints;
 using Pizon.Web.Hubs;
@@ -369,5 +371,43 @@ public sealed class NodeRegistryTests
         Assert.False(nodes.Release("b"));
         Assert.Equal([1, 3], nodes.Busy());
         Assert.Equal(2, nodes.Assign("d"));
+    }
+}
+
+/// <summary>
+/// Tests for the terminal look-and-feel settings.
+/// </summary>
+public sealed class TerminalOptionsTests
+{
+    /// <summary>The glow blur defaults to 0.1, is written as an invariant CSS number, and is clamped to 0..1.</summary>
+    /// <param name="blur">The configured blur.</param>
+    /// <param name="expected">The CSS value written to the page.</param>
+    [Theory]
+    [InlineData(TerminalOptions.DefaultGlowBlur, "0.1")]
+    [InlineData(0.0, "0")]
+    [InlineData(0.25, "0.25")]
+    [InlineData(-3.0, "0")]
+    [InlineData(7.0, "1")]
+    [InlineData(double.NaN, "0.1")]
+    [InlineData(double.PositiveInfinity, "0.1")]
+    public void FormatsAndClampsGlowBlur(double blur, string expected)
+    {
+        Assert.Equal(expected, new TerminalOptions { GlowBlur = blur }.GlowBlurCss);
+    }
+
+    /// <summary>A comma-decimal culture doesn't leak into the CSS value.</summary>
+    [Fact]
+    public void UsesInvariantCulture()
+    {
+        var previous = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+            Assert.Equal("0.35", new TerminalOptions { GlowBlur = 0.35 }.GlowBlurCss);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previous;
+        }
     }
 }

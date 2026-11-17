@@ -361,6 +361,7 @@ public sealed class ApiTests : IAsyncDisposable
         foreach (var (url, status, text) in new[]
         {
             ("/", HttpStatusCode.OK, "boot"),
+            ("/", HttpStatusCode.OK, "style=\"--term-glow: 0.1\""),
             ("/healthz", HttpStatusCode.OK, "Healthy"),
             ("/plain", HttpStatusCode.OK, "PIZON BBS (plain text)"),
             ("/Error", HttpStatusCode.OK, "LINE NOISE"),
@@ -402,6 +403,27 @@ public sealed class ProductionTests : IAsyncDisposable
         Assert.False((await client.Get<MeResponse>("/api/me")).DevLoginEnabled);
         using var health = await client.GetAsync(new Uri("/health", UriKind.Relative));
         Assert.Equal(HttpStatusCode.NotFound, health.StatusCode);
+    }
+}
+
+/// <summary>
+/// The Terminal settings reach the page.
+/// </summary>
+public sealed class TerminalSettingsTests : IAsyncDisposable
+{
+    private readonly BbsFactory factory = new(new() { ["Terminal:GlowBlur"] = "0.4" });
+
+    /// <inheritdoc />
+    public ValueTask DisposeAsync() => factory.DisposeAsync();
+
+    /// <summary>A configured glow blur is written onto the root element as a CSS variable.</summary>
+    /// <returns>A task that completes when the test is done.</returns>
+    [Fact]
+    public async Task WritesGlowBlurToThePage()
+    {
+        using var client = factory.Caller();
+        var body = await client.GetStringAsync(new Uri("/", UriKind.Relative));
+        Assert.Contains("<html lang=\"en\" style=\"--term-glow: 0.4\">", body, StringComparison.Ordinal);
     }
 }
 

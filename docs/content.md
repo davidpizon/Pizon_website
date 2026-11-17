@@ -57,6 +57,22 @@ Each area has a `name`, a `description` and `files`. Each file has an 8.3-style 
   commands: color, fill style, text size, reset, line, rectangle, bar, circle, oval, polygon, filled
   polygon, text and buttons (`|1U`). Buttons send their hotkey just like the ANSI menu.
 
+## Terminal glow
+
+The soft phosphor glow around each character is set in `src/Pizon.Web/appsettings.json`:
+
+```json
+"Terminal": { "GlowBlur": 0.1 }
+```
+
+- The value is the blur radius as a fraction of the terminal font size. 0 turns the glow off, and
+  0.25 was the original, stronger look.
+- Values outside 0–1 are clamped, and a non-number falls back to 0.1.
+- On the server, set it without a rebuild by adding `Terminal__GlowBlur=0.15` to `~/pizon/.env` and
+  running `docker compose up -d`.
+- Locally, use `dotnet user-secrets` or the `Terminal__GlowBlur` environment variable.
+- `App.razor` writes the value onto `<html>` as `--term-glow`, and `app.css` reads it.
+
 ## Animations (`anim/`)
 
 Every spot works without its file; add one to turn it on.

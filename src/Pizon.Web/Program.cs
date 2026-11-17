@@ -27,6 +27,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.Configure<WordFilterOptions>(builder.Configuration.GetSection("WordFilter"));
 builder.Services.AddSingleton<WordFilter>();
 builder.Services.Configure<NotifyOptions>(builder.Configuration.GetSection("Notify"));
+builder.Services.Configure<TerminalOptions>(builder.Configuration.GetSection("Terminal"));
 builder.Services.AddHttpClient<INotifier, WebhookNotifier>(http => http.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddSingleton<IDoorCatalog, FileDoorCatalog>();
 builder.Services.AddBbsRateLimits();

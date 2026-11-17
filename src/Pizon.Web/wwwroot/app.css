@@ -122,8 +122,9 @@ a {
     white-space: pre;
     color: var(--bbs-fg);
     outline: none;
-    /* Soft phosphor glow in each cell's own color. */
-    text-shadow: 0 0 calc(var(--term-size) * 0.25) currentColor;
+    /* Soft phosphor glow in each cell's own color. --term-glow comes from the Terminal:GlowBlur
+       setting (set on <html> by App.razor); 0 turns it off. */
+    text-shadow: 0 0 calc(var(--term-size) * var(--term-glow, 0.1)) currentColor;
     font-variant-ligatures: none;
 }
 

@@ -1,5 +1,10 @@
+using System.Globalization;
 using Pizon.Doors.Sdk;
 using Pizon.Doors.Sdk.Text;
+using Pizon.Web.Client.Content;
+using Pizon.Web.Client.Screens.Art;
+using Pizon.Web.Client.Screens.Rendering;
+using Pizon.Web.Client.Services;
 using Pizon.Web.Client.Terminal;
 
 namespace Pizon.Web.Client.Screens;
@@ -17,20 +22,11 @@ public sealed class ConnectScreen(ScreenContext context) : ScreenBase(context)
     public override async Task<ScreenId> RunAsync(BbsSession session, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(session);
+        var view = new ScreenView(ConnectArt.Instance).Set(ConnectArt.Sound, SoundText(session.Settings));
+        await Term.ClearAsync(cancellationToken);
+        await Term.WriteAsync(view.Render(), cancellationToken);
         while (true)
         {
-            await Term.ClearAsync(cancellationToken);
-            await SayAsync(
-                "\r\n\r\n|08  PIZON TERMINAL v1.0 · 80x25 · ANSI/256 · RIPscrip 1.54\r\n" +
-                "|08  (c) 2026 PIZON.COM · All rights reserved, most wrongs regretted.\r\n\r\n" +
-                "|07  Modem ready. Phonebook entry: |15PIZON BBS|07 · 555-0199\r\n\r\n",
-                cancellationToken);
-            await Term.WriteAsync(
-                "    " + Ui.Item("C", Ui.P("|15CONNECT|07")) + "      " +
-                Ui.Item("S", Ui.P($"Sound: |11{(session.Settings.Sound ? "ON " : "OFF")}|07")) + "\r\n\r\n",
-                cancellationToken);
-            await SayAsync("|08  Press |14C|08 or |14Enter|08 to dial. Tip: try it with sound on.|07", cancellationToken);
-
             var key = await Term.ReadKeyAsync(cancellationToken);
             if (DoorKeys.Is(key, 'C') || key == DoorKeys.Enter)
             {
@@ -43,10 +39,14 @@ public sealed class ConnectScreen(ScreenContext context) : ScreenBase(context)
                 session.Settings = session.Settings with { Sound = !session.Settings.Sound };
                 await session.Settings.SaveAsync(Context.Storage);
                 await Term.ApplySettingsAsync(session.Settings);
+                await view.UpdateAsync(Term, ConnectArt.Sound, SoundText(session.Settings), cancellationToken);
             }
         }
     }
+
+    private static string SoundText(TerminalSettings settings) => settings.Sound ? "ON" : "OFF";
 }
+
 
 /// <summary>
 /// The dial-up handshake. Moving the mouse, tapping or pressing a key skips only this part.
@@ -108,23 +108,41 @@ public sealed class HandshakeScreen(ScreenContext context) : ScreenBase(context)
 /// <param name="context">The shared screen context.</param>
 public sealed class WelcomeScreen(ScreenContext context) : ScreenBase(context)
 {
-    /// <summary>The banner art URL.</summary>
-    public const string BannerUrl = "content/pizon.ans";
-
     /// <inheritdoc />
     public override ScreenId Id => ScreenId.Welcome;
+
+    /// <summary>
+    /// Binds the welcome art: the tagline and the status lines.
+    /// </summary>
+    /// <param name="board">The bulletins (tagline, SysOp, mood, location).</param>
+    /// <param name="session">The call.</param>
+    /// <param name="presence">Presence, for the node numbers.</param>
+    /// <param name="now">The current time.</param>
+    /// <returns>The bound view.</returns>
+    public static ScreenView View(BulletinBoard board, BbsSession session, IPresence presence, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(board);
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(presence);
+        return new ScreenView(WelcomeArt.Instance)
+            .Set(WelcomeArt.Tagline, board.Tagline)
+            .Set(WelcomeArt.Sysop, board.Sysop)
+            .Set(WelcomeArt.Node, presence.NodeNumber.ToString(CultureInfo.InvariantCulture))
+            .Set(WelcomeArt.Nodes, presence.Online.ToString(CultureInfo.InvariantCulture))
+            .Set(WelcomeArt.Date, now.ToString("ddd MMM dd yyyy", CultureInfo.InvariantCulture).ToUpperInvariant())
+            .Set(WelcomeArt.Mood, board.Mood)
+            .Set(WelcomeArt.Location, board.Location)
+            .Set(WelcomeArt.Caller, PipeCodes.Escape(session.Handle))
+            .Set(WelcomeArt.Level, session.Level.ToString(CultureInfo.InvariantCulture));
+    }
 
     /// <inheritdoc />
     public override async Task<ScreenId> RunAsync(BbsSession session, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(session);
         var board = await Context.Content.GetBulletinsAsync(cancellationToken);
-        var art = await Term.LoadArtAsync(BannerUrl, cancellationToken) ?? Ui.P("\r\n\r\n|#201   P I Z O N\r\n");
-        var screen = Ui.Cls + art + Ui.P("|07\r\n") +
-            Ui.P($"|#045{TextWrap.Center("B · B · S", 80)}\r\n") +
-            Ui.P($"|08{TextWrap.Center(board.Tagline, 80)}|07\r\n\r\n") +
-            Ui.StatusHeader(session, Context.Presence, board.Sysop, board.Mood, board.Location, Context.Time.GetLocalNow());
-        await Term.TransitionAsync(Transition.Spray, screen, cancellationToken);
+        var view = View(board, session, Context.Presence, Context.Time.GetLocalNow());
+        await Term.TransitionAsync(Transition.Spray, view.Render(), cancellationToken);
         Term.DiscardPendingKeys();
         return ScreenId.Login;
     }

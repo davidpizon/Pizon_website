@@ -1,9 +1,10 @@
 using System.Globalization;
-using System.Text;
 using Pizon.Doors.Sdk;
 using Pizon.Doors.Sdk.Text;
 using Pizon.Web.Client.Api;
 using Pizon.Web.Client.Content;
+using Pizon.Web.Client.Screens.Art;
+using Pizon.Web.Client.Screens.Rendering;
 using Pizon.Web.Client.Terminal;
 
 namespace Pizon.Web.Client.Screens;
@@ -18,7 +19,7 @@ public sealed class DoorsScreen(ScreenContext context) : ScreenBase(context)
     public override ScreenId Id => ScreenId.Doors;
 
     /// <summary>
-    /// Builds the door list.
+    /// Builds the door list: two lines per door (title and tags, then the description).
     /// </summary>
     /// <param name="doors">The enabled doors.</param>
     /// <param name="session">The call (for lock markers).</param>
@@ -27,24 +28,22 @@ public sealed class DoorsScreen(ScreenContext context) : ScreenBase(context)
     {
         ArgumentNullException.ThrowIfNull(doors);
         ArgumentNullException.ThrowIfNull(session);
-        var sb = new StringBuilder(Ui.Cls + Ui.Header("Door games"));
-        sb.Append(Ui.P("|08   External programs. The BBS steps aside while you play.|07\r\n\r\n"));
+        var lines = new List<string>();
         if (doors.Count == 0)
         {
-            sb.Append(Ui.P("|08   All doors are closed for repairs. The SysOp is holding a screwdriver.|07\r\n"));
+            lines.Add("|08All doors are closed for repairs. The SysOp is holding a screwdriver.|07");
         }
 
         for (var i = 0; i < doors.Count && i < 9; i++)
         {
             var d = doors[i];
             var locked = d.RequiresAuth && !session.IsMember;
-            var tag = locked ? Ui.P(" |09[LOCKED - LVL 10]|07") : d.Scored ? Ui.P(" |13[SCORED]|07") : string.Empty;
-            sb.Append("   ").Append(Ui.Item((i + 1).ToString(CultureInfo.InvariantCulture), Ui.P($"|15{PipeCodes.Escape(d.Title)}|07"))).Append(tag).Append("\r\n");
-            sb.Append(Ui.P($"|08       {PipeCodes.Escape(TextWrap.Fit(d.Description, 68))}|07\r\n"));
+            var tag = locked ? " |09[LOCKED - LVL 10]|07" : d.Scored ? " |13[SCORED]|07" : string.Empty;
+            lines.Add(Ui.ItemPipe((i + 1).ToString(CultureInfo.InvariantCulture), $"|15{PipeCodes.Escape(d.Title)}") + tag);
+            lines.Add($"|08    {PipeCodes.Escape(d.Description)}|07");
         }
 
-        sb.Append("\r\n   ").Append(Ui.Item("Q", "Back to the main menu")).Append(Ui.P("\r\n\r\n|11   Open which door? |07"));
-        return sb.ToString();
+        return new ScreenView(DoorsArt.Instance).SetLines(DoorsArt.List, lines).Render();
     }
 
     /// <inheritdoc />
@@ -83,20 +82,20 @@ public sealed class UserListScreen(ScreenContext context) : ScreenBase(context)
     /// Builds the hall of fame lines.
     /// </summary>
     /// <param name="fame">The hall of fame.</param>
-    /// <returns>ANSI lines.</returns>
+    /// <returns>Pipe-code lines.</returns>
     public static IReadOnlyList<string> RenderFame(HallOfFame fame)
     {
         ArgumentNullException.ThrowIfNull(fame);
-        var lines = new List<string> { Ui.P("|13  HALL OF FAME|08 - legends of the board|07"), string.Empty };
+        var lines = new List<string> { "|13  HALL OF FAME|08 - legends of the board|07", string.Empty };
         foreach (var e in fame.Entries)
         {
-            var handle = Ui.P($"|15{TextWrap.Fit(e.Handle, 16)}|07");
+            var handle = $"|15{PipeCodes.Escape(TextWrap.Fit(e.Handle, 16))}|07";
             if (e.Url is not null)
             {
-                handle = Ansi.LinkStart(e.Url) + handle + Ansi.LinkEnd();
+                handle = "|{" + e.Url.AbsoluteUri + "}" + handle + "|]";
             }
 
-            lines.Add("   " + handle + Ui.P($" |11{TextWrap.Fit(e.Clearance, 9)}|07 {PipeCodes.Escape(TextWrap.Fit(e.Note, 48))}"));
+            lines.Add($"   {handle} |11{PipeCodes.Escape(TextWrap.Fit(e.Clearance, 9))}|07 {PipeCodes.Escape(TextWrap.Fit(e.Note, 48))}");
         }
 
         return lines;
@@ -106,59 +105,48 @@ public sealed class UserListScreen(ScreenContext context) : ScreenBase(context)
     /// Builds the recent callers lines.
     /// </summary>
     /// <param name="callers">Recent callers.</param>
-    /// <returns>ANSI lines.</returns>
+    /// <returns>Pipe-code lines.</returns>
     public static IReadOnlyList<string> RenderCallers(IReadOnlyList<CallerDto> callers)
     {
         ArgumentNullException.ThrowIfNull(callers);
-        var lines = new List<string> { Ui.P("|13  LAST CALLERS|08 - signed-in callers only; guests leave no trace|07"), string.Empty };
+        var lines = new List<string> { "|13  LAST CALLERS|08 - signed-in callers only; guests leave no trace|07", string.Empty };
         if (callers.Count == 0)
         {
-            lines.Add(Ui.P("|08   Nobody has signed the log yet.|07"));
+            lines.Add("|08   Nobody has signed the log yet.|07");
         }
 
-        foreach (var c in callers)
-        {
-            lines.Add(Ui.P(string.Create(
-                CultureInfo.InvariantCulture,
-                $"   |15{PipeCodes.Escape(TextWrap.Fit(c.Handle, 16))}|07 |11LVL {c.Level,3}|07  |08last call {Ui.Stamp(c.LastSeen)}|07")));
-        }
-
+        lines.AddRange(callers.Select(c => string.Create(
+            CultureInfo.InvariantCulture,
+            $"   |15{PipeCodes.Escape(TextWrap.Fit(c.Handle, 16))}|07 |11LVL {c.Level,3}|07  |08last call {Ui.Stamp(c.LastSeen)}|07")));
         return lines;
     }
 
     /// <summary>
     /// Builds the credits lines, including the attribution the CC BY-SA terminal font requires.
     /// </summary>
-    /// <returns>ANSI lines.</returns>
+    /// <returns>Pipe-code lines.</returns>
     public static IReadOnlyList<string> RenderCredits() =>
     [
-        Ui.P("|13  CREDITS|07"),
+        "|13  CREDITS|07",
         string.Empty,
-        Ui.P("   |07Font: IBM VGA 8x16 from |15")
-            + Ansi.LinkStart(new Uri("https://int10h.org/oldschool-pc-fonts/")) + Ui.P("The Ultimate Oldschool PC Font Pack") + Ansi.LinkEnd()
-            + Ui.P("|07 by VileR,"),
-        Ui.P("   |07licensed ")
-            + Ansi.LinkStart(new Uri("https://creativecommons.org/licenses/by-sa/4.0/")) + Ui.P("|11CC BY-SA 4.0") + Ansi.LinkEnd()
-            + Ui.P("|07."),
+        "   |07Font: IBM VGA 8x16 from |15|{https://int10h.org/oldschool-pc-fonts/}The Ultimate Oldschool PC Font Pack|]|07 by VileR,",
+        "   |07licensed |{https://creativecommons.org/licenses/by-sa/4.0/}|11CC BY-SA 4.0|]|07.",
     ];
 
     /// <inheritdoc />
     public override async Task<ScreenId> RunAsync(BbsSession session, CancellationToken cancellationToken)
     {
-        await Term.TransitionAsync(Transition.Wipe, Ui.Cls + Ui.Header("User list & hall of fame"), cancellationToken);
+        var view = new ScreenView(UsersArt.Instance);
+        await Term.TransitionAsync(Transition.Wipe, view.Render(), cancellationToken);
         var fame = await Context.Content.GetHallOfFameAsync(cancellationToken);
         var callers = await Context.Api.GetRecentCallersAsync(cancellationToken);
+        var callerLines = RenderCallers(callers.Value ?? []).Concat(callers.IsOk ? [] : [Ui.FailureText(callers)]);
         var lines = RenderFame(fame)
-            .Concat([string.Empty]).Concat(RenderCallers(callers.Value ?? []))
+            .Concat([string.Empty]).Concat(callerLines)
             .Concat([string.Empty]).Concat(RenderCredits())
             .ToList();
-        await Ui.PageAsync(Term, lines, 18, cancellationToken);
-        if (!callers.IsOk)
-        {
-            await Term.WriteAsync(Ui.Failure(callers), cancellationToken);
-        }
-
-        await Ui.PressAnyKeyAsync(Term, cancellationToken);
+        await view.PageAsync(Term, UsersArt.Body, UsersArt.More, lines, cancellationToken);
+        await view.PressAnyKeyAsync(Term, cancellationToken);
         return ScreenId.MainMenu;
     }
 }
@@ -176,39 +164,41 @@ public sealed class PageSysopScreen(ScreenContext context) : ScreenBase(context)
     public override async Task<ScreenId> RunAsync(BbsSession session, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(session);
-        await Term.TransitionAsync(Transition.Wipe, Ui.Cls + Ui.Header("Page the SysOp"), cancellationToken);
+        var view = new ScreenView(PageArt.Instance);
         if (!session.IsMember)
         {
-            await Term.WriteAsync(Ui.AccessDenied(session), cancellationToken);
-            await Ui.PressAnyKeyAsync(Term, cancellationToken);
+            view.Set(PageArt.Status, Ui.AccessDeniedText(session));
+            await Term.TransitionAsync(Transition.Wipe, view.Render(), cancellationToken);
+            await view.PressAnyKeyAsync(Term, cancellationToken);
             return ScreenId.MainMenu;
         }
 
-        await SayAsync(
-            $"|07  The SysOp may be asleep, at work, or elbow-deep in a modem. Keep it short (|15{Limits.PageLength}|07 characters).\r\n" +
-            "|08  ESC cancels.|07\r\n\r\n|11  Message: |07",
-            cancellationToken);
-        var text = await LineEditor.ReadLineAsync(Term, Math.Min(Limits.PageLength, 62), string.Empty, cancellationToken);
+        await Term.TransitionAsync(Transition.Wipe, view.Render(), cancellationToken);
+        await Term.WriteAsync(view.MoveTo(PageArt.Message), cancellationToken);
+        var text = await LineEditor.ReadLineAsync(Term, Math.Min(Limits.PageLength, PageArt.Message.Width - 2), string.Empty, cancellationToken);
         if (string.IsNullOrWhiteSpace(text))
         {
-            await SayAsync("\r\n|08  Page cancelled. The SysOp sleeps on.|07\r\n", cancellationToken);
-            await Ui.PressAnyKeyAsync(Term, cancellationToken);
+            await view.UpdateAsync(Term, PageArt.Status, "|08Page cancelled. The SysOp sleeps on.|07", cancellationToken);
+            await view.PressAnyKeyAsync(Term, cancellationToken);
             return ScreenId.MainMenu;
         }
 
-        await SayAsync("\r\n\r\n|07  Paging SysOp", cancellationToken);
+        var paging = "|07Paging SysOp";
         for (var i = 0; i < 3; i++)
         {
             await Term.BeepAsync();
-            await SayAsync("|14 . ", cancellationToken);
+            paging += "|14 . ";
+            await view.UpdateAsync(Term, PageArt.Status, paging, cancellationToken);
             await Term.DelayAsync(TimeSpan.FromMilliseconds(350), cancellationToken);
         }
 
         var result = await Context.Api.PageSysopAsync(new PageSysopRequest(text), cancellationToken);
-        await Term.WriteAsync(
-            result.IsOk ? Ui.P("\r\n\r\n|10  SysOp has been alerted.|08 If they answer, it will be in a bulletin, a reply, or a dream.|07\r\n") : Ui.Failure(result),
+        await view.UpdateAsync(
+            Term,
+            PageArt.Status,
+            result.IsOk ? "|10SysOp has been alerted.|08 If they answer, it will be in a bulletin, a reply, or a dream.|07" : Ui.FailureText(result),
             cancellationToken);
-        await Ui.PressAnyKeyAsync(Term, cancellationToken);
+        await view.PressAnyKeyAsync(Term, cancellationToken);
         return ScreenId.MainMenu;
     }
 }
@@ -223,21 +213,26 @@ public sealed class SettingsScreen(ScreenContext context) : ScreenBase(context)
     public override ScreenId Id => ScreenId.Settings;
 
     /// <summary>
+    /// Binds the settings art.
+    /// </summary>
+    /// <param name="settings">The current settings.</param>
+    /// <returns>The bound view.</returns>
+    public static ScreenView View(TerminalSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        static string OnOff(bool on) => on ? "|10ON" : "|09OFF";
+        return new ScreenView(SettingsArt.Instance)
+            .Set(SettingsArt.Baud, settings.BaudLabel)
+            .Set(SettingsArt.Sound, OnOff(settings.Sound))
+            .Set(SettingsArt.Rip, OnOff(settings.RipCard));
+    }
+
+    /// <summary>
     /// Builds the settings screen.
     /// </summary>
     /// <param name="settings">The current settings.</param>
     /// <returns>ANSI text.</returns>
-    public static string Render(TerminalSettings settings)
-    {
-        ArgumentNullException.ThrowIfNull(settings);
-        static string OnOff(bool on) => on ? "|10ON |07" : "|09OFF|07";
-        return Ui.Cls + Ui.Header("Terminal settings") +
-            "   " + Ui.Item("B", Ui.P($"Baud rate ......... |11{settings.BaudLabel}|07")) + "\r\n" +
-            "   " + Ui.Item("A", Ui.P($"Modem sounds ...... {OnOff(settings.Sound)}")) + "\r\n" +
-            "   " + Ui.Item("R", Ui.P($"RIP welcome card .. {OnOff(settings.RipCard)}")) + "\r\n\r\n" +
-            Ui.P("|08   Settings are saved in this browser only. INSTANT also turns off most animation.|07\r\n\r\n") +
-            "   " + Ui.Item("Q", "Back to the main menu") + Ui.P("\r\n\r\n|11   Change which? |07");
-    }
+    public static string Render(TerminalSettings settings) => View(settings).Render();
 
     /// <summary>
     /// Applies one settings key.
@@ -279,7 +274,8 @@ public sealed class SettingsScreen(ScreenContext context) : ScreenBase(context)
                 session.Settings = next;
                 await next.SaveAsync(Context.Storage);
                 await Term.ApplySettingsAsync(next);
-                await Term.WriteAsync(Render(next), cancellationToken);
+                var view = View(next);
+                await Term.WriteAsync(view.RenderField(SettingsArt.Baud) + view.RenderField(SettingsArt.Sound) + view.RenderField(SettingsArt.Rip), cancellationToken);
             }
         }
     }
@@ -295,20 +291,18 @@ public sealed class GoodbyeScreen(ScreenContext context) : ScreenBase(context)
     public override ScreenId Id => ScreenId.Goodbye;
 
     /// <summary>
-    /// Builds the farewell text.
+    /// Builds the farewell screen.
     /// </summary>
     /// <param name="handle">The caller's handle.</param>
     /// <param name="online">How long the caller was online.</param>
     /// <returns>ANSI text.</returns>
     public static string Render(string handle, TimeSpan online)
     {
+        ArgumentNullException.ThrowIfNull(handle);
         var seconds = Math.Max(0, (long)online.TotalSeconds);
-        return Ui.Cls + Ui.P(string.Create(
-            CultureInfo.InvariantCulture,
-            $"\r\n\r\n|#201{TextWrap.Center("THANKS FOR CALLING PIZON BBS", 80)}\r\n\r\n" +
-            $"|07{TextWrap.Center($"{PipeCodes.Escape(handle)}, you were online for {seconds:N0} seconds.", 80)}\r\n" +
-            $"|08{TextWrap.Center("Your call has been logged on paper and filed in a shoebox.", 80)}\r\n\r\n" +
-            $"|07{TextWrap.Center("Call again soon. The line is always open (unless someone is on it).", 80)}|07\r\n\r\n"));
+        return new ScreenView(GoodbyeArt.Instance)
+            .Set(GoodbyeArt.Farewell, string.Create(CultureInfo.InvariantCulture, $"{PipeCodes.Escape(handle)}, you were online for {seconds:N0} seconds."))
+            .Render();
     }
 
     /// <inheritdoc />
@@ -326,6 +320,8 @@ public sealed class GoodbyeScreen(ScreenContext context) : ScreenBase(context)
         await Term.DelayAsync(TimeSpan.FromSeconds(2), cancellationToken);
         Term.DiscardPendingKeys();
         session.ActingAsGuest = false;
+        session.SignedOn = false;
+        session.ReturnTo = null;
         return ScreenId.Connect;
     }
 }
@@ -354,6 +350,25 @@ public sealed class LogoutScreen(ScreenContext context) : ScreenBase(context)
         await Context.Presence.DisconnectAsync();
         Context.Navigator.NavigateAway("/");
         return ScreenId.Exit;
+    }
+}
+
+/// <summary>
+/// "File not found": shown instead of a screen the caller may not open, without saying that it exists.
+/// </summary>
+/// <param name="context">The shared screen context.</param>
+public sealed class NotFoundScreen(ScreenContext context) : ScreenBase(context)
+{
+    /// <inheritdoc />
+    public override ScreenId Id => ScreenId.NotFound;
+
+    /// <inheritdoc />
+    public override async Task<ScreenId> RunAsync(BbsSession session, CancellationToken cancellationToken)
+    {
+        var view = new ScreenView(NotFoundArt.Instance);
+        await Term.WriteAsync(view.Render(), cancellationToken);
+        await view.PressAnyKeyAsync(Term, cancellationToken);
+        return ScreenId.MainMenu;
     }
 }
 

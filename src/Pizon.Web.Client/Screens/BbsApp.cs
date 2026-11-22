@@ -5,7 +5,8 @@ namespace Pizon.Web.Client.Screens;
 
 /// <summary>
 /// The BBS itself: picks the first screen from the page address, then runs screens one after another until
-/// the page leaves.
+/// the page leaves. It keeps the browser address in step with the screen (see <see cref="RouteTable"/>) and
+/// follows Back and Forward by stopping the current screen and opening the one the address names.
 /// </summary>
 public sealed class BbsApp
 {
@@ -13,6 +14,9 @@ public sealed class BbsApp
     public const string LoginFailedMessage = "LOGIN FAILED - NO CARRIER ON THAT LINE";
 
     private readonly ScreenContext context;
+    private ScreenId current = ScreenId.Exit;
+    private ScreenId? requested;
+    private CancellationTokenSource? screenStop;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="BbsApp"/> class.
@@ -26,8 +30,13 @@ public sealed class BbsApp
 
     /// <summary>
     /// Works out where a call starts from the page address, and notes it on the session.
-    /// <c>?resume=login</c> (back from Discord) and <c>?login=failed</c> skip the dial-up; <c>/sysop</c>
-    /// asks for the SysOp console after sign-in.
+    /// <list type="bullet">
+    /// <item><c>/</c> dials up.</item>
+    /// <item><c>/login</c> goes straight to the login screen; <c>resume=1</c> means back from Discord,
+    /// <c>error=failed</c> shows the sign-in failure and <c>returnUrl</c> is where to go afterwards.</item>
+    /// <item>Any other routed address is a link straight to that screen (no dial-up).</item>
+    /// <item>The old <c>/?resume=login</c> and <c>/?login=failed</c> addresses still work.</item>
+    /// </list>
     /// </summary>
     /// <param name="uri">The page address.</param>
     /// <param name="session">The call.</param>
@@ -36,23 +45,33 @@ public sealed class BbsApp
     {
         ArgumentNullException.ThrowIfNull(uri);
         ArgumentNullException.ThrowIfNull(session);
-        var query = uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries);
-        if (uri.AbsolutePath.TrimEnd('/').Equals("/sysop", StringComparison.OrdinalIgnoreCase))
+        var path = RouteTable.Normalize(uri.AbsolutePath);
+        var failed = string.Equals(Query(uri, "login"), "failed", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(Query(uri, "error"), "failed", StringComparison.OrdinalIgnoreCase);
+        var resumed = failed || Query(uri, "resume") is "1" ||
+            string.Equals(Query(uri, "resume"), "login", StringComparison.OrdinalIgnoreCase);
+
+        if (path == "/" && !resumed)
         {
-            session.SysopRequested = true;
+            return ScreenId.Connect;
         }
 
-        if (query.Contains("login=failed", StringComparer.OrdinalIgnoreCase))
+        if (path == "/" || path.Equals("/login", StringComparison.OrdinalIgnoreCase))
         {
-            session.Resumed = true;
-            session.LoginError = LoginFailedMessage;
+            session.Resumed = resumed;
+            session.LoginError = failed ? LoginFailedMessage : null;
+            if (RouteTable.TryResolve(Query(uri, "returnUrl"), out var back))
+            {
+                session.ReturnTo = back.Path;
+            }
+
             return ScreenId.Login;
         }
 
-        if (query.Contains("resume=login", StringComparer.OrdinalIgnoreCase))
+        if (RouteTable.TryResolve(path, out var route))
         {
-            session.Resumed = true;
-            return ScreenId.Login;
+            session.DeepLink = true;
+            return route.Screen;
         }
 
         return ScreenId.Connect;
@@ -84,6 +103,7 @@ public sealed class BbsApp
         ScreenId.Goodbye => new GoodbyeScreen(context),
         ScreenId.Logout => new LogoutScreen(context),
         ScreenId.SysopConsole => new SysopConsoleScreen(context),
+        ScreenId.NotFound => new NotFoundScreen(context),
         _ => null,
     };
 
@@ -108,23 +128,127 @@ public sealed class BbsApp
             await context.Terminal.WriteAsync(PipeCodes.ToAnsi("|15CARRIER RESTORED - WELCOME BACK|07\r\n"), cancellationToken);
         }
 
-        var current = start;
-        while (!cancellationToken.IsCancellationRequested && Create(current) is { } screen)
+        if (session.DeepLink)
         {
-            try
+            start = await JoinAsync(session, start, cancellationToken);
+        }
+
+        context.Navigator.LocationChanged += OnLocationChanged;
+        try
+        {
+            var next = RouteTable.Guard(start, session);
+            var previous = next;
+            while (!cancellationToken.IsCancellationRequested && Create(next) is { } screen)
             {
-                current = await screen.RunAsync(session, cancellationToken);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception)
-            {
-                await context.Terminal.WriteAsync(PipeCodes.ToAnsi("\r\n\r\n|09LINE NOISE - CONNECTION LOST.|07\r\n\r\n|15NO CARRIER|07\r\n"), cancellationToken);
-                await context.Terminal.DelayAsync(TimeSpan.FromSeconds(2), cancellationToken);
-                current = ScreenId.Connect;
+                current = next;
+                SyncAddress(previous, current);
+                using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                screenStop = stop;
+                try
+                {
+                    next = await screen.RunAsync(session, stop.Token);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception) when (requested is not null)
+                {
+                    // Back/Forward stopped the screen; the requested screen runs next.
+                }
+                catch (Exception)
+                {
+                    await context.Terminal.WriteAsync(PipeCodes.ToAnsi("\r\n\r\n|09LINE NOISE - CONNECTION LOST.|07\r\n\r\n|15NO CARRIER|07\r\n"), cancellationToken);
+                    await context.Terminal.DelayAsync(TimeSpan.FromSeconds(2), cancellationToken);
+                    next = ScreenId.Connect;
+                }
+                finally
+                {
+                    screenStop = null;
+                }
+
+                if (requested is { } asked)
+                {
+                    next = asked;
+                    requested = null;
+                }
+
+                previous = current;
+                next = RouteTable.Guard(next, session);
             }
         }
+        finally
+        {
+            context.Navigator.LocationChanged -= OnLocationChanged;
+            current = ScreenId.Exit;
+        }
+    }
+
+    /// <summary>
+    /// Handles an address change: Back, Forward, or a typed or clicked link to another screen. Changes this
+    /// app made itself (the address already names the current screen) are ignored.
+    /// </summary>
+    /// <param name="sender">The navigator.</param>
+    /// <param name="uri">The new address.</param>
+    internal void OnLocationChanged(object? sender, Uri uri)
+    {
+        if (!RouteTable.TryResolve(uri.AbsolutePath, out var route) || route.Screen == current ||
+            RouteTable.For(current)?.Path == route.Path)
+        {
+            return;
+        }
+
+        requested = route.Screen;
+        screenStop?.Cancel();
+    }
+
+    private static string? Query(Uri uri, string key)
+    {
+        foreach (var pair in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var eq = pair.IndexOf('=', StringComparison.Ordinal);
+            var name = eq < 0 ? pair : pair[..eq];
+            if (name.Equals(key, StringComparison.OrdinalIgnoreCase))
+            {
+                return eq < 0 ? string.Empty : Uri.UnescapeDataString(pair[(eq + 1)..]);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Joins a call that started from a link: notes the time, asks the server who is calling and joins
+    /// presence, so the linked screen draws straight away. A signed-in caller counts as logged on; one who
+    /// signed in but never chose a handle picks one first and then comes back to the link.
+    /// </summary>
+    private async Task<ScreenId> JoinAsync(BbsSession session, ScreenId start, CancellationToken cancellationToken)
+    {
+        session.ConnectedAt = context.Time.GetUtcNow();
+        session.Me = await context.Api.GetMeAsync(cancellationToken);
+        if (session.Me.Authenticated && session.Me.Handle is null)
+        {
+            session.ReturnTo = RouteTable.For(start)?.Path;
+            return ScreenId.NewUserHandle;
+        }
+
+        session.SignedOn = session.Me.Authenticated;
+        await context.Presence.ConnectAsync(cancellationToken);
+        return start;
+    }
+
+    /// <summary>
+    /// Puts the screen's address in the address bar (screens without a route keep the current one).
+    /// Moving on from an entrance screen replaces the history entry.
+    /// </summary>
+    private void SyncAddress(ScreenId from, ScreenId to)
+    {
+        if (RouteTable.For(to) is not { } route ||
+            string.Equals(RouteTable.Normalize(context.Navigator.CurrentUri.AbsolutePath), route.Path, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        context.Navigator.Navigate(route.Path, replace: RouteTable.IsEntrance(from));
     }
 }

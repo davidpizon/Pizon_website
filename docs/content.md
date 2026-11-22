@@ -10,7 +10,7 @@ Lines marked **`TODO-SYSOP`** are placeholders waiting for real text.
 | `files.json` | The `[3]` file areas: favorite links dressed up as downloads. |
 | `halloffame.json` | Extra names for the `[5]` user list (merged with real recent callers). |
 | `doors.json` | The `[4]` door list (see [doors.md](doors.md)). |
-| `pizon.ans` | The graffiti PIZON banner. |
+| `pizon.ans` | The graffiti PIZON banner (the source for the banner baked into `Screens/Art/welcome.dur`). |
 | `welcome.rip` | The RIPscrip welcome card shown after login. |
 | `anim/` | Optional animations (see below). |
 
@@ -52,10 +52,55 @@ Each area has a `name`, a `description` and `files`. Each file has an 8.3-style 
 
 - **Banner:** `pizon.ans` is plain ANSI (UTF-8 or CP437; a SAUCE record is ignored). It was generated
   with `node src/tools/make-banner.mjs` and can be redrawn in Moebius or PabloDraw. Keep it within
-  80 columns and use 256-color codes for gradients.
+  80 columns and use 256-color codes for gradients. The welcome screen's copy is baked into
+  `Screens/Art/welcome.dur`, so rerun `node src/tools/make-screen-art.mjs` after changing it.
 - **RIP card:** `welcome.rip` is generated with `node src/tools/make-welcome-rip.mjs`. Supported
   commands: color, fill style, text size, reset, line, rectangle, bar, circle, oval, polygon, filled
   polygon, text and buttons (`|1U`). Buttons send their hotkey just like the ANSI menu.
+
+## Screen art (`src/Pizon.Web.Client/Screens/Art/*.dur`)
+
+Every BBS screen is drawn from a Durdraw file in `Screens/Art` (outside `wwwroot`, so it is never
+published). At build time the screen compiler (`src/Pizon.Screens.Generator`, a Roslyn source generator)
+turns each `.dur` into a C# class, the way Razor compiles `.razor` files: `main-menu.dur` becomes
+`MainMenuArt`, with one typed property per placeholder (`MainMenuArt.Handle`). The browser only ever
+receives compiled code and finished ANSI; it never sees the `.dur` file or the `@` syntax.
+
+The drawings were made by `node src/tools/make-screen-art.mjs`, which paints each screen with the real
+terminal emulator. To restyle a screen, either edit its rows in that script and rerun it, or open the
+`.dur` in [Durdraw](https://github.com/durdraw/durdraw) and save it (256 colors, one frame). Keep each
+placeholder's size and position, or move it and rebuild: the screen code finds slots by name.
+
+Placeholders are typed straight into the art, one row at a time:
+
+| Token | Meaning |
+|---|---|
+| `@NAME....@` | A field the whole token wide. Its value uses the color of the cell after the first `@`. Fill with `.` to align left, `>` right, `=` centered. |
+| `@?NAME...@` | A field the caller types into. |
+| `@^.......@` | Makes the slot directly above one row taller (same column and width), for blocks of text and lists. |
+| `@ANIM:NAME@` | A box an animation plays in (the SysOp cam on bulletin #2). |
+| `@[K] label@` | A hotspot: clicking the label sends key `K` (a key, or a name such as `Enter`). The label stays where it is drawn; only the two `@` cells turn blank. |
+| `@CURSOR@` | Where the cursor rests after drawing; prompts and typed text appear there. |
+
+Names are capitals, digits and `_`, starting with a letter. An `@` followed by anything other than a
+capital, `?`, `^` or `[` is an ordinary character. Values bound into a field are laid out by `TextLayout`:
+one-line fields are cut with `...`, taller ones word-wrap within their box, and colors and links carry
+across wrapped lines, so text never spills into the art.
+
+### Screen compiler errors
+
+Problems in the art fail the build, like a mistake in a Razor file:
+
+| Code | Meaning |
+|---|---|
+| `PZN001` | The file can't be read as Durdraw art (not gzip/JSON, no frames, no contents, no size). |
+| `PZN002` | Unsupported format: save with 256 colors (16-color files aren't read yet). |
+| `PZN003` | A malformed placeholder: no closing `@` on the row, a bad name or fill, or a hotspot without a key. |
+| `PZN004` | A `@^@` continuation with no slot of the same column and width directly above it. |
+| `PZN005` | Two placeholders with the same name in one file. |
+| `PZN006` | The art is larger than the 80x25 terminal. |
+| `PZN007` | The art has more than one frame (animated art isn't supported yet). |
+| `PZN008` | The name clashes with a member of the art class (for example `NAME`, `TEXT`, `INSTANCE`). |
 
 ## Terminal glow
 

@@ -14,9 +14,47 @@ Browser (Blazor WebAssembly, no prerender)                       Server (Pizon.W
                                                                  └─────────────────────────────────┘
 ```
 
-The whole UI is one Razor page (`Home`) hosting the terminal element. Screens are plain C# classes
-(`src/Pizon.Web.Client/Screens/`), not Razor components: each implements `IScreen`, writes ANSI to the
-terminal and reads keys, then returns the next `ScreenId`. `BbsApp` runs that loop.
+The terminal lives in `Layout/BbsLayout`, which every screen address shares, so it survives moving between
+screens. Screens are plain C# classes (`src/Pizon.Web.Client/Screens/`), not Razor components: each
+implements `IScreen`, writes ANSI to the terminal and reads keys, then returns the next `ScreenId`. `BbsApp`
+runs that loop. (The plan to turn screens into Razor pages is in [plans/screen-pages.md](plans/screen-pages.md).)
+
+Each screen's layout is a Durdraw drawing in `Screens/Art`, compiled into a C# class at build time by
+`Pizon.Screens.Generator` (see [content.md](content.md#screen-art-srcpizonwebclientscreensartdur)). A screen
+binds its data to the art's typed slots through `Screens/Rendering/ScreenView`, which lays each value out in
+its slot with `TextLayout` and produces finished ANSI: the whole screen with `Render()`, one slot with
+`RenderField()` for live updates (such as the callers-online row), and `PageAsync()` for lists longer than
+their box. Streamed moments (the modem handshake, login prompts, download progress, `NO CARRIER`) are still
+written directly.
+
+## Screen addresses
+
+Each screen has its own address, so it can be bookmarked and shared, and Back and Forward work.
+`Screens/RouteTable.cs` lists them, and `Pages/Home.razor` has a matching `@page` for each one (a test
+checks the two agree).
+
+| Address | Screen | Who can open it from a link |
+|---|---|---|
+| `/` | Dial-up, then the banner and login | anyone |
+| `/login` | Login (`resume=1` after Discord, `error=failed`, `returnUrl=/…`) | anyone |
+| `/menu`, `/bulletins`, `/board`, `/files`, `/doors`, `/users`, `/rip`, `/settings`, `/goodbye` | The matching screen | anyone |
+| `/page`, `/handle` | Page the SysOp, change handle | members |
+| `/sysop` | SysOp console | the SysOp |
+
+- **Following the address.** When a screen ends, `BbsApp` puts the next screen's address in the address bar.
+  Leaving an entrance screen (dial-up, login, new-user handle) replaces the history entry, so Back from the
+  menu doesn't redial. When the address changes by itself (Back, Forward, a typed address), `BbsApp` stops
+  the current screen and opens the one named.
+- **Links skip the dial-up.** Any address but `/` draws its screen straight away, after asking the server
+  who is calling.
+- **Access from a link.** A caller who hasn't logged on yet and opens a member or SysOp screen goes to
+  `/login` first, then on to that screen. A signed-in caller who isn't the SysOp gets "file not found" for
+  `/sysop`. Member screens still show ACCESS DENIED to guests themselves. The server enforces all of this
+  for its APIs regardless.
+- **Links never change anything.** Logout, Discord sign-in, the dial-up steps and the banner have no
+  address of their own, so no link can start them.
+- **`returnUrl` is only ever a known screen address** on this site. `RouteTable.TryResolve` rejects
+  anything else, such as `//host` or `/\host`.
 
 ## The terminal (`wwwroot/js/terminal/`)
 

@@ -53,15 +53,6 @@ public sealed class BulletinsScreenTests
         Assert.Contains("No scored doors", none.Terminal.Plain, StringComparison.Ordinal);
     }
 
-    /// <summary>Wrapping measures visible characters only.</summary>
-    [Fact]
-    public void WrapsPipeLines()
-    {
-        Assert.Equal(["|14short"], BulletinsScreen.WrapPipeLine("|14short", 10));
-        var pieces = BulletinsScreen.WrapPipeLine("|14one two three four", 9).ToList();
-        Assert.Equal(["|14one two", "three", "four"], pieces);
-        Assert.All(pieces, p => Assert.True(PipeCodes.VisibleLength(p) <= 9));
-    }
 }
 
 /// <summary>
@@ -95,7 +86,7 @@ public sealed class MessageBoardScreenTests
     public void FormatsMessagesSafely()
     {
         var lines = MessageBoardScreen.FormatMessage(new MessageDto(7, null, "x|14y", "hi |09red", T0), 1);
-        var plain = string.Join("\n", lines.Select(PipeCodes.StripAnsi));
+        var plain = string.Join("\n", lines.Select(PipeCodes.StripToPlain));
         Assert.Contains("#7", plain, StringComparison.Ordinal);
         Assert.Contains("x|14y", plain, StringComparison.Ordinal);
         Assert.Contains("hi |09red", plain, StringComparison.Ordinal);
@@ -461,23 +452,140 @@ public sealed class SysopConsoleScreenTests
 /// </summary>
 public sealed class BbsAppTests
 {
-    /// <summary>The page address picks the first screen.</summary>
+    /// <summary>
+    /// The page address picks the first screen: <c>/</c> dials, <c>/login</c> carries resume, error and a
+    /// checked <c>returnUrl</c>, the old addresses still work, and any other route is a link straight in.
+    /// </summary>
     /// <param name="url">The page address.</param>
     /// <param name="expected">The first screen.</param>
     /// <param name="resumed">Whether the call resumes.</param>
-    /// <param name="sysop">Whether the console was requested.</param>
+    /// <param name="returnTo">The screen to open after logging on.</param>
+    /// <param name="deepLink">Whether the call skips the dial-up.</param>
     [Theory]
-    [InlineData("http://x/", ScreenId.Connect, false, false)]
-    [InlineData("http://x/?resume=login", ScreenId.Login, true, false)]
-    [InlineData("http://x/sysop/?a=1&LOGIN=FAILED", ScreenId.Login, true, true)]
-    [InlineData("http://x/SYSOP", ScreenId.Connect, false, true)]
-    public void PicksTheStartScreen(string url, ScreenId expected, bool resumed, bool sysop)
+    [InlineData("http://x/", ScreenId.Connect, false, null, false)]
+    [InlineData("http://x/?resume=login", ScreenId.Login, true, null, false)]
+    [InlineData("http://x/?a=1&LOGIN=FAILED", ScreenId.Login, true, null, false)]
+    [InlineData("http://x/login", ScreenId.Login, false, null, false)]
+    [InlineData("http://x/login?resume=1&returnUrl=%2FPage", ScreenId.Login, true, "/page", false)]
+    [InlineData("http://x/login?error=failed&returnUrl=%2F%2Fevil.example", ScreenId.Login, true, null, false)]
+    [InlineData("http://x/login?returnUrl", ScreenId.Login, false, null, false)]
+    [InlineData("http://x/Bulletins/", ScreenId.Bulletins, false, null, true)]
+    [InlineData("http://x/nowhere", ScreenId.Connect, false, null, false)]
+    public void PicksTheStartScreen(string url, ScreenId expected, bool resumed, string? returnTo, bool deepLink)
     {
         var session = new BbsSession();
         Assert.Equal(expected, BbsApp.StartScreen(new Uri(url), session));
         Assert.Equal(resumed, session.Resumed);
-        Assert.Equal(sysop, session.SysopRequested);
-        Assert.Equal(url.Contains("FAILED", StringComparison.Ordinal) ? BbsApp.LoginFailedMessage : null, session.LoginError);
+        Assert.Equal(returnTo, session.ReturnTo);
+        Assert.Equal(deepLink, session.DeepLink);
+        Assert.Equal(url.Contains("failed", StringComparison.OrdinalIgnoreCase) ? BbsApp.LoginFailedMessage : null, session.LoginError);
+    }
+
+    /// <summary>A link straight to a public screen draws it with no dial-up, after asking who is calling.</summary>
+    /// <returns>A task that completes when the test is done.</returns>
+    [Fact]
+    public async Task OpensALinkStraightAway()
+    {
+        var h = new Harness().Member();
+        h.Navigator.CurrentUri = new Uri("http://localhost/files");
+        using var stop = new CancellationTokenSource();
+        h.Terminal.StopWhenEmpty = stop;
+        h.Session.Me = MeResponse.Guest;
+        var start = BbsApp.StartScreen(h.Navigator.CurrentUri, h.Session);
+        await new BbsApp(h.Context).RunAsync(h.Session, start, stop.Token);
+
+        Assert.Contains("FILE AREAS", h.Terminal.Plain, StringComparison.Ordinal);
+        Assert.DoesNotContain("Modem ready", h.Terminal.Plain, StringComparison.Ordinal);
+        Assert.Equal(h.Time.Now, h.Session.ConnectedAt);
+        Assert.True(h.Session.SignedOn);
+        Assert.Equal("Neo", h.Session.Me.Handle);
+        Assert.Equal(1, h.Presence.Connects);
+        Assert.Empty(h.Navigator.Moves);
+    }
+
+    /// <summary>
+    /// A guest's link to a member screen goes to login first (replacing the address), then back to the
+    /// screen, which shows ACCESS DENIED to a caller who stays a guest.
+    /// </summary>
+    /// <returns>A task that completes when the test is done.</returns>
+    [Fact]
+    public async Task SendsGuestsToLoginFirst()
+    {
+        var h = new Harness();
+        h.Session.Settings = h.Session.Settings with { RipCard = false };
+        h.Navigator.CurrentUri = new Uri("http://localhost/page");
+        using var stop = new CancellationTokenSource();
+        h.Terminal.StopWhenEmpty = stop;
+        h.Terminal.Keys(DoorKeys.Enter, "x");
+        var start = BbsApp.StartScreen(h.Navigator.CurrentUri, h.Session);
+        await new BbsApp(h.Context).RunAsync(h.Session, start, stop.Token);
+
+        Assert.Equal([("/login", true), ("/page", true), ("/menu", false)], h.Navigator.Moves);
+        Assert.Contains("ACCESS DENIED", h.Terminal.Plain, StringComparison.Ordinal);
+    }
+
+    /// <summary>A signed-in member who isn't the SysOp gets "file not found" for the SysOp console.</summary>
+    /// <returns>A task that completes when the test is done.</returns>
+    [Fact]
+    public async Task HidesTheConsoleFromMembers()
+    {
+        var h = new Harness().Member();
+        h.Navigator.CurrentUri = new Uri("http://localhost/sysop");
+        using var stop = new CancellationTokenSource();
+        h.Terminal.StopWhenEmpty = stop;
+        h.Terminal.Keys("x");
+        var start = BbsApp.StartScreen(h.Navigator.CurrentUri, h.Session);
+        await new BbsApp(h.Context).RunAsync(h.Session, start, stop.Token);
+
+        Assert.Contains("FILE NOT FOUND ON THIS DRIVE", h.Terminal.Plain, StringComparison.Ordinal);
+        Assert.DoesNotContain("SYSOP CONSOLE", h.Terminal.Plain, StringComparison.Ordinal);
+        Assert.Equal([("/menu", false)], h.Navigator.Moves);
+    }
+
+    /// <summary>A signed-in caller without a handle picks one before the linked screen opens.</summary>
+    /// <returns>A task that completes when the test is done.</returns>
+    [Fact]
+    public async Task NewUsersPickAHandleBeforeTheLink()
+    {
+        var h = new Harness();
+        h.Api.Me = new MeResponse(true, null, "Neo", 10, false, true, false);
+        h.Navigator.CurrentUri = new Uri("http://localhost/files");
+        using var stop = new CancellationTokenSource();
+        h.Terminal.StopWhenEmpty = stop;
+        h.Terminal.Keys(DoorKeys.Escape);
+        var start = BbsApp.StartScreen(h.Navigator.CurrentUri, h.Session);
+        await new BbsApp(h.Context).RunAsync(h.Session, start, stop.Token);
+
+        Assert.Contains("NEW USER - CHOOSE YOUR HANDLE", h.Terminal.Plain, StringComparison.Ordinal);
+        Assert.Contains("FILE AREAS", h.Terminal.Plain, StringComparison.Ordinal);
+        Assert.True(h.Session.ActingAsGuest);
+    }
+
+    /// <summary>
+    /// Back/Forward to another screen stops the current one and opens it; unknown addresses and the current
+    /// screen's own address are ignored.
+    /// </summary>
+    /// <returns>A task that completes when the test is done.</returns>
+    [Fact]
+    public async Task FollowsBackAndForward()
+    {
+        var h = new Harness();
+        using var stop = new CancellationTokenSource();
+        h.Terminal.StopWhenEmpty = stop;
+        h.Terminal.Keys("x", "y");
+        h.Terminal.OnRead = key =>
+        {
+            if (key == "x")
+            {
+                h.Navigator.Go("/nowhere");
+                h.Navigator.Go("/menu");
+                h.Navigator.Go("/bulletins");
+            }
+        };
+        await new BbsApp(h.Context).RunAsync(h.Session, ScreenId.MainMenu, stop.Token);
+
+        Assert.Equal([("/menu", false)], h.Navigator.Moves);
+        Assert.Contains("SYSTEM BULLETINS", h.Terminal.Plain, StringComparison.Ordinal);
     }
 
     /// <summary>Every screen id but Exit has a screen.</summary>

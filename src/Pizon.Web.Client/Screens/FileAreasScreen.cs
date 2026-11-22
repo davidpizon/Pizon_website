@@ -1,8 +1,9 @@
 using System.Globalization;
-using System.Text;
 using Pizon.Doors.Sdk;
 using Pizon.Doors.Sdk.Text;
 using Pizon.Web.Client.Content;
+using Pizon.Web.Client.Screens.Art;
+using Pizon.Web.Client.Screens.Rendering;
 using Pizon.Web.Client.Terminal;
 
 namespace Pizon.Web.Client.Screens;
@@ -24,17 +25,10 @@ public sealed class FileAreasScreen(ScreenContext context) : ScreenBase(context)
     public static string RenderAreas(FileLibrary library)
     {
         ArgumentNullException.ThrowIfNull(library);
-        var sb = new StringBuilder(Ui.Cls + Ui.Header("File areas"));
-        sb.Append(Ui.P("|08   All files virus-scanned with a magnifying glass. Downloads open in a new tab.|07\r\n\r\n"));
-        for (var i = 0; i < library.Areas.Count && i < 26; i++)
-        {
-            var area = library.Areas[i];
-            var letter = ((char)('A' + i)).ToString();
-            sb.Append("   ").Append(Ui.Item(letter, Ui.P($"|15{TextWrap.Fit(area.Name, 12)}|07 {PipeCodes.Escape(area.Description)} |08({area.Files.Count} files)|07"))).Append("\r\n");
-        }
-
-        sb.Append("\r\n   ").Append(Ui.Item("Q", "Back to the main menu")).Append(Ui.P("\r\n\r\n|11   Select an area: |07"));
-        return sb.ToString();
+        var items = library.Areas.Take(26).Select((area, i) => Ui.ItemPipe(
+            ((char)('A' + i)).ToString(),
+            $"|15{TextWrap.Fit(area.Name, 12)}|07 {PipeCodes.Escape(area.Description)} |08({area.Files.Count} files)"));
+        return new ScreenView(FilesArt.Instance).SetLines(FilesArt.List, items).Render();
     }
 
     /// <summary>
@@ -45,22 +39,17 @@ public sealed class FileAreasScreen(ScreenContext context) : ScreenBase(context)
     public static string RenderArea(FileArea area)
     {
         ArgumentNullException.ThrowIfNull(area);
-        var sb = new StringBuilder(Ui.Cls + Ui.Header($"File area: {area.Name}"));
-        sb.Append(Ui.P("|08   #  FILENAME.EXT       SIZE  DESCRIPTION|07\r\n"));
-        sb.Append(Ui.P($"|08   {new string('─', 72)}|07\r\n"));
-        for (var i = 0; i < area.Files.Count && i < 9; i++)
+        var items = area.Files.Take(9).Select((f, i) =>
         {
-            var f = area.Files[i];
             var key = (i + 1).ToString(CultureInfo.InvariantCulture);
-            var name = TextWrap.Fit(f.Name.ToUpperInvariant(), 12);
-            var nameText = f.Url is null ? Ui.P($"|15{name}|07") : Ansi.LinkStart(f.Url) + Ui.P($"|15{name}|07") + Ansi.LinkEnd();
-            sb.Append("  ").Append(Ui.Item(key, string.Empty)).Append(' ').Append(nameText)
-                .Append(Ui.P($" |11{Ui.Size(f.Size),11}|07  {PipeCodes.Escape(TextWrap.Fit(f.Description, 45))}"))
-                .Append("\r\n");
-        }
-
-        sb.Append("\r\n   ").Append(Ui.Item("Q", "Back to the areas")).Append(Ui.P("\r\n\r\n|11   Download which file (1-9)? |07"));
-        return sb.ToString();
+            var name = $"|15{PipeCodes.Escape(TextWrap.Fit(f.Name.ToUpperInvariant(), 12))}|07";
+            var nameText = f.Url is null ? name : $"|{{{f.Url.AbsoluteUri}}}{name}|]";
+            return $"|[{key}]|14[{key}]|]|07 {nameText} |11{Ui.Size(f.Size),11}|07  {PipeCodes.Escape(TextWrap.Fit(f.Description, 45))}";
+        });
+        return new ScreenView(FileAreaArt.Instance)
+            .Set(FileAreaArt.Title, $"FILE AREA: {area.Name.ToUpperInvariant()}")
+            .SetLines(FileAreaArt.List, items)
+            .Render();
     }
 
     /// <summary>

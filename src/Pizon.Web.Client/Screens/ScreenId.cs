@@ -62,6 +62,9 @@ public enum ScreenId
     /// <summary>[*] The hidden SysOp console.</summary>
     SysopConsole,
 
+    /// <summary>"File not found on this drive": a route the caller may not open (keeps it secret that it exists).</summary>
+    NotFound,
+
     /// <summary>Stop the BBS loop (used when the page navigates away).</summary>
     Exit,
 }

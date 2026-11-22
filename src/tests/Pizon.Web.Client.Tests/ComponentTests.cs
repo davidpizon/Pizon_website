@@ -5,6 +5,7 @@ using Pizon.Web.Client.Api;
 using Pizon.Web.Client.Doors;
 using Pizon.Web.Client.Layout;
 using Pizon.Web.Client.Pages;
+using Pizon.Web.Client.Screens;
 using Pizon.Web.Client.Services;
 using Pizon.Web.Client.Terminal;
 
@@ -24,11 +25,16 @@ internal sealed class TestNavigation : NavigationManager
     /// <summary>Gets a value indicating whether the last navigation forced a page load.</summary>
     public bool ForcedLoad { get; private set; }
 
+    /// <summary>Gets a value indicating whether the last navigation replaced the history entry.</summary>
+    public bool Replaced { get; private set; }
+
     /// <inheritdoc />
     protected override void NavigateToCore(string uri, NavigationOptions options)
     {
         Uri = ToAbsoluteUri(uri).ToString();
         ForcedLoad = options.ForceLoad;
+        Replaced = options.ReplaceHistoryEntry;
+        NotifyLocationChanged(isInterceptedLink: false);
     }
 }
 
@@ -157,15 +163,22 @@ public sealed class ServiceAdapterTests
         Assert.Equal(1, presence.Online);
     }
 
-    /// <summary>External navigation forces a page load.</summary>
+    /// <summary>External navigation forces a page load; in-app moves don't, and raise the change event.</summary>
     [Fact]
     public void NavigatesAway()
     {
         var nav = new TestNavigation("http://localhost/");
-        var external = new ExternalNavigator(nav);
+        using var external = new ExternalNavigator(nav);
+        var seen = new List<Uri>();
+        external.LocationChanged += (_, uri) => seen.Add(uri);
         external.NavigateAway("/auth/discord");
         Assert.Equal(new Uri("http://localhost/auth/discord"), external.CurrentUri);
         Assert.True(nav.ForcedLoad);
+
+        external.Navigate("/menu", replace: true);
+        Assert.False(nav.ForcedLoad);
+        Assert.True(nav.Replaced);
+        Assert.Equal(new Uri("http://localhost/menu"), seen[^1]);
     }
 }
 
@@ -197,15 +210,37 @@ public sealed class ComponentTests : IAsyncDisposable
     /// <inheritdoc />
     public ValueTask DisposeAsync() => context.DisposeAsync();
 
-    /// <summary>The home page renders the terminal and starts the BBS at the Connect screen.</summary>
+    /// <summary>The BBS layout renders the terminal and starts the BBS at the Connect screen.</summary>
     [Fact]
-    public void HomeStartsTheBbs()
+    public void LayoutStartsTheBbs()
     {
-        var cut = context.Render<Home>();
+        var cut = context.Render<BbsLayout>(p => p.Add(x => x.Body, (RenderFragment)(b => b.AddContent(0, "BODY"))));
         Assert.NotNull(cut.Find(".term[role=log]"));
         Assert.NotNull(cut.Find("canvas.rip"));
+        Assert.Contains("BODY", cut.Markup, StringComparison.Ordinal);
         cut.WaitForAssertion(() => Assert.NotEmpty(module.Invocations["write"]));
         Assert.Single(module.Invocations["init"]);
+    }
+
+    /// <summary>The tab title follows the address: each screen has its own, the dial-in page is just the site name.</summary>
+    [Fact]
+    public void HomeTitleFollowsTheAddress()
+    {
+        var nav = context.Services.GetRequiredService<NavigationManager>();
+        var cut = context.Render<Home>();
+        Assert.Equal("PIZON BBS", cut.Instance.Title);
+        nav.NavigateTo("/bulletins");
+        cut.WaitForAssertion(() => Assert.Equal("System bulletins - PIZON BBS", cut.Instance.Title));
+        Assert.Equal("PIZON BBS", Home.TitleFor("/nowhere"));
+    }
+
+    /// <summary>Every routed screen is an <c>@page</c> on <see cref="Home"/>, and every <c>@page</c> is a routed screen.</summary>
+    [Fact]
+    public void HomeServesEveryRoute()
+    {
+        var pages = typeof(Home).GetCustomAttributes(typeof(RouteAttribute), inherit: false)
+            .Cast<RouteAttribute>().Select(r => r.Template).Order(StringComparer.Ordinal);
+        Assert.Equal(RouteTable.All.Select(r => r.Path).Order(StringComparer.Ordinal), pages);
     }
 
     /// <summary>The router shows the home page inside the layout.</summary>

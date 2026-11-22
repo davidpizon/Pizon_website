@@ -45,6 +45,7 @@ src/
   Pizon.Web.Client/   all UI: screens (C#), services, wwwroot/content (bulletins, files, art),
                       wwwroot/js/terminal (the ANSI emulator)
   Pizon.Doors.Sdk/    the door contract (IDoor, IDoorContext), pipe codes, palette, FakeDoorContext
+  Pizon.Screens.Generator/  the screen compiler: Screens/Art/*.dur → C# art classes at build time
   Pizon.Doors.Oracle/ first door, lazy-loaded
   templates/pizon-door/  `dotnet new pizon-door` template
   tools/              Node scripts: banner and RIP generators, .sh → animation JSON converter

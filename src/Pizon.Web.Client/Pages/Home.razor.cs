@@ -1,80 +1,38 @@
 using Microsoft.AspNetCore.Components;
-using Microsoft.JSInterop;
-using Pizon.Web.Client.Api;
-using Pizon.Web.Client.Content;
-using Pizon.Web.Client.Doors;
+using Microsoft.AspNetCore.Components.Routing;
 using Pizon.Web.Client.Screens;
-using Pizon.Web.Client.Services;
-using Pizon.Web.Client.Terminal;
 
 namespace Pizon.Web.Client.Pages;
 
 /// <summary>
-/// The only page: hosts the 80x25 terminal and the RIP canvas, then runs the BBS in them.
-/// Served at <c>/</c> and at <c>/sysop</c> (which opens the SysOp console after sign-in).
+/// The page for every BBS screen address (one <c>@page</c> per <see cref="RouteTable"/> entry). It draws
+/// nothing itself: <see cref="Layout.BbsLayout"/> hosts the terminal and the BBS follows the address. It
+/// keeps the browser tab title in step with the screen.
 /// </summary>
-public sealed partial class Home : IAsyncDisposable
+public sealed partial class Home : IDisposable
 {
-    private readonly CancellationTokenSource stop = new();
-    private ElementReference screen;
-    private ElementReference mobileInput;
-    private ElementReference ripCanvas;
-    private JsTerminal? terminal;
-
-    /// <summary>Gets or sets the JS runtime.</summary>
+    /// <summary>Gets or sets the navigation manager.</summary>
     [Inject]
-    public required IJSRuntime Js { get; set; }
+    public required NavigationManager Navigation { get; set; }
 
-    /// <summary>Gets or sets the server API.</summary>
-    [Inject]
-    public required IBbsApi Api { get; set; }
+    /// <summary>Gets the tab title for the current address.</summary>
+    public string Title => TitleFor(new Uri(Navigation.Uri).AbsolutePath);
 
-    /// <summary>Gets or sets the content store.</summary>
-    [Inject]
-    public required ContentStore Content { get; set; }
-
-    /// <summary>Gets or sets presence.</summary>
-    [Inject]
-    public required IPresence Presence { get; set; }
-
-    /// <summary>Gets or sets full-page navigation.</summary>
-    [Inject]
-    public required IExternalNavigator Navigator { get; set; }
-
-    /// <summary>Gets or sets the door loader.</summary>
-    [Inject]
-    public required IDoorLoader DoorLoader { get; set; }
-
-    /// <summary>Gets or sets the clock.</summary>
-    [Inject]
-    public required TimeProvider Time { get; set; }
+    /// <summary>
+    /// Builds the tab title for a path.
+    /// </summary>
+    /// <param name="path">The path.</param>
+    /// <returns>"Screen - PIZON BBS", or just the site name.</returns>
+    public static string TitleFor(string path) =>
+        RouteTable.TryResolve(path, out var route) && route.Screen != ScreenId.Connect
+            ? $"{route.Title} - {RouteTable.SiteName}"
+            : RouteTable.SiteName;
 
     /// <inheritdoc />
-    public async ValueTask DisposeAsync()
-    {
-        await stop.CancelAsync();
-        stop.Dispose();
-        if (terminal is not null)
-        {
-            await terminal.DisposeAsync();
-        }
-    }
+    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
 
     /// <inheritdoc />
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (!firstRender)
-        {
-            return;
-        }
+    protected override void OnInitialized() => Navigation.LocationChanged += OnLocationChanged;
 
-        terminal = await JsTerminal.CreateAsync(Js, screen, mobileInput, ripCanvas);
-        var session = new BbsSession { Settings = await TerminalSettings.LoadAsync(terminal) };
-        await terminal.ApplySettingsAsync(session.Settings);
-        var doors = new DoorHost(terminal, Api, Content, terminal, DoorLoader);
-        var context = new ScreenContext(terminal, Api, Content, Presence, Navigator, terminal, doors, Time);
-        var app = new BbsApp(context);
-        var start = BbsApp.StartScreen(Navigator.CurrentUri, session);
-        _ = app.RunAsync(session, start, stop.Token);
-    }
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => _ = InvokeAsync(StateHasChanged);
 }

@@ -27,8 +27,17 @@ public sealed class BbsSession
     /// <summary>Gets or sets a value indicating whether the caller chose to stay a guest this call.</summary>
     public bool ActingAsGuest { get; set; }
 
-    /// <summary>Gets or sets a value indicating whether the SysOp console was requested via <c>/sysop</c>.</summary>
-    public bool SysopRequested { get; set; }
+    /// <summary>
+    /// Gets or sets a value indicating whether the caller has logged on this call: chose GUEST or signed in at
+    /// the login screen, or opened a link while already signed in.
+    /// </summary>
+    public bool SignedOn { get; set; }
+
+    /// <summary>Gets or sets the routed path to open once the caller has logged on (from a link or <c>returnUrl</c>).</summary>
+    public string? ReturnTo { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the call started from a link straight to a screen (no dial-up).</summary>
+    public bool DeepLink { get; set; }
 
     /// <summary>Gets a value indicating whether the caller is signed in with a handle (and not acting as a guest).</summary>
     public bool IsMember => Me.Authenticated && Me.Handle is not null && !ActingAsGuest;

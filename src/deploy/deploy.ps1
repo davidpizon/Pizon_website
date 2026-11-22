@@ -4,8 +4,8 @@
 
 .DESCRIPTION
     1. Runs src/coverage.ps1 (warnings as errors, all tests, 80% coverage gate); stops if it fails.
-    2. Builds the Docker image pizon-bbs:<timestamp> from src/.
-    3. Streams it to the server (docker save | gzip | ssh docker load); nothing is pushed to a registry.
+    2. Builds the image pizon-bbs:<timestamp> from src/ with Docker or Podman (whichever is installed).
+    3. Streams it to the server (save | ssh -C docker load); nothing is pushed to a registry.
     4. Copies docker-compose.yml, Caddyfile and backup.sh to ~/pizon and runs docker compose up -d.
     5. Checks https://pizon.com/healthz.
     The tag that was running before is saved in ~/pizon/previous-tag so -Rollback can switch back.
@@ -89,11 +89,20 @@ if (-not $SkipTests) {
 
 $tag = Get-Date -Format 'yyyyMMdd-HHmmss'
 $image = "pizon-bbs:$tag"
-Invoke-Native "docker build $image" { docker build -t $image -f (Join-Path $src 'Dockerfile') $src }
+
+# Build with Docker or Podman, whichever is installed on this PC (the server always runs Docker).
+# Podman names unqualified images localhost/..., which Docker on the server wouldn't find, so it gets
+# the fully qualified Docker Hub form; docker load shortens that back to pizon-bbs:<tag>.
+$engine = if (Get-Command docker -ErrorAction SilentlyContinue) { 'docker' }
+    elseif (Get-Command podman -ErrorAction SilentlyContinue) { 'podman' }
+    else { throw 'Install Docker Desktop or Podman Desktop to build the image.' }
+$localImage = if ($engine -eq 'podman') { "docker.io/library/$image" } else { $image }
+Invoke-Native "$engine build $image" { & $engine build --platform linux/amd64 -t $localImage -f (Join-Path $src 'Dockerfile') $src }
 
 Invoke-Native 'Upload image' {
-    # cmd keeps the binary pipe intact (PowerShell pipelines would re-encode it).
-    cmd /c "docker save $image | gzip | ssh $Server ""gunzip | docker load"""
+    # cmd keeps the binary pipe intact (PowerShell pipelines would re-encode it). ssh -C compresses the
+    # stream, so no gzip is needed on Windows.
+    cmd /c "$engine save $localImage | ssh -C $Server docker load"
 }
 
 Invoke-Native 'Copy compose files' {

@@ -20,7 +20,7 @@ public static class AuthSetup
     public const string CookieName = ".pizon.bbs";
 
     /// <summary>Where a failed or cancelled Discord sign-in returns to.</summary>
-    public const string LoginFailedUrl = "/?login=failed";
+    public const string LoginFailedUrl = "/login?error=failed";
 
     /// <summary>
     /// Checks whether Discord sign-in is configured.

@@ -2,6 +2,8 @@ using System.Globalization;
 using Pizon.Doors.Sdk;
 using Pizon.Doors.Sdk.Text;
 using Pizon.Web.Client.Api;
+using Pizon.Web.Client.Screens.Art;
+using Pizon.Web.Client.Screens.Rendering;
 using Pizon.Web.Client.Terminal;
 
 namespace Pizon.Web.Client.Screens;
@@ -17,22 +19,22 @@ public sealed class SysopConsoleScreen(ScreenContext context) : ScreenBase(conte
     public override ScreenId Id => ScreenId.SysopConsole;
 
     /// <summary>
-    /// Formats one pending message for review.
+    /// Binds one pending message into the moderation queue art.
     /// </summary>
     /// <param name="message">The pending message.</param>
     /// <param name="index">Its position (1-based).</param>
     /// <param name="total">How many are waiting.</param>
-    /// <returns>ANSI text.</returns>
-    public static string RenderPending(PendingMessageDto message, int index, int total)
+    /// <returns>The bound view.</returns>
+    public static ScreenView PendingView(PendingMessageDto message, int index, int total)
     {
         ArgumentNullException.ThrowIfNull(message);
         var reply = message.ParentId is { } p ? string.Create(CultureInfo.InvariantCulture, $" · reply to #{p}") : string.Empty;
-        var head = Ui.P(string.Create(
+        var head = string.Create(
             CultureInfo.InvariantCulture,
-            $"|08  [{index}/{total}] |14#{message.Id}|08 from |15{PipeCodes.Escape(message.Handle)}|08 (user {message.UserId}) · {Ui.Stamp(message.PostedAt)}{reply}|07\r\n\r\n"));
-        var body = string.Concat(TextWrap.Wrap(message.Body, 74).Select(l => Ui.P($"    |07{PipeCodes.Escape(l)}\r\n")));
-        return head + body + "\r\n  " + Ui.Item("A", "Approve") + "  " + Ui.Item("X", "Reject") + "  " +
-            Ui.Item("B", Ui.P("|09Ban author|07")) + "  " + Ui.Item("N", "Skip") + "  " + Ui.Item("Q", "Done") + "\r\n";
+            $"|08[{index}/{total}] |14#{message.Id}|08 from |15{PipeCodes.Escape(message.Handle)}|08 (user {message.UserId}) · {Ui.Stamp(message.PostedAt)}{reply}|07");
+        return new ScreenView(SysopQueueArt.Instance)
+            .Set(SysopQueueArt.Head, head)
+            .Set(SysopQueueArt.Body, PipeCodes.Escape(message.Body));
     }
 
     /// <inheritdoc />
@@ -46,14 +48,7 @@ public sealed class SysopConsoleScreen(ScreenContext context) : ScreenBase(conte
 
         while (true)
         {
-            await Term.TransitionAsync(
-                Transition.Wipe,
-                Ui.Cls + Ui.Header("SysOp console") +
-                "   " + Ui.Item("1", "Moderation queue") + "\r\n" +
-                "   " + Ui.Item("2", "Pages inbox") + "\r\n" +
-                "   " + Ui.Item("3", "Delete a message") + "\r\n\r\n" +
-                "   " + Ui.Item("Q", "Back to the main menu") + Ui.P("\r\n\r\n|11   SysOp command: |07"),
-                cancellationToken);
+            await Term.TransitionAsync(Transition.Wipe, new ScreenView(SysopArt.Instance).Render(), cancellationToken);
             var key = await Term.ReadKeyAsync(cancellationToken);
             switch (key == DoorKeys.Escape ? key : key.ToUpperInvariant())
             {
@@ -81,15 +76,19 @@ public sealed class SysopConsoleScreen(ScreenContext context) : ScreenBase(conte
         var items = queue.Value ?? [];
         if (!queue.IsOk || items.Count == 0)
         {
-            await Term.WriteAsync(Ui.Cls + Ui.Header("Moderation queue") + (queue.IsOk ? Ui.P("|08  Nothing waiting. Go touch grass.|07\r\n") : Ui.Failure(queue)), cancellationToken);
-            await Ui.PressAnyKeyAsync(Term, cancellationToken);
+            var empty = new ScreenView(SysopPagesArt.Instance)
+                .Set(SysopPagesArt.Title, "MODERATION QUEUE")
+                .Set(SysopPagesArt.Body, queue.IsOk ? "|08  Nothing waiting. Go touch grass.|07" : Ui.FailureText(queue));
+            await Term.WriteAsync(empty.Render(), cancellationToken);
+            await empty.PressAnyKeyAsync(Term, cancellationToken);
             return;
         }
 
         for (var i = 0; i < items.Count; i++)
         {
             var m = items[i];
-            await Term.WriteAsync(Ui.Cls + Ui.Header("Moderation queue") + RenderPending(m, i + 1, items.Count), cancellationToken);
+            var view = PendingView(m, i + 1, items.Count);
+            await Term.WriteAsync(view.Render(), cancellationToken);
             while (true)
             {
                 var key = await Term.ReadKeyAsync(cancellationToken);
@@ -121,8 +120,8 @@ public sealed class SysopConsoleScreen(ScreenContext context) : ScreenBase(conte
 
                 if (!result.IsOk)
                 {
-                    await Term.WriteAsync(Ui.Failure(result), cancellationToken);
-                    await Ui.PressAnyKeyAsync(Term, cancellationToken);
+                    await view.UpdateAsync(Term, SysopQueueArt.Status, Ui.FailureText(result), cancellationToken);
+                    await view.PressAnyKeyAsync(Term, cancellationToken);
                 }
 
                 break;
@@ -132,32 +131,33 @@ public sealed class SysopConsoleScreen(ScreenContext context) : ScreenBase(conte
 
     private async Task PagesAsync(CancellationToken cancellationToken)
     {
+        var view = new ScreenView(SysopPagesArt.Instance).Set(SysopPagesArt.Title, "PAGES INBOX");
+        await Term.WriteAsync(view.Render(), cancellationToken);
         var pages = await Context.Api.GetPagesAsync(cancellationToken);
-        await Term.WriteAsync(Ui.Cls + Ui.Header("Pages inbox"), cancellationToken);
         var items = pages.Value ?? [];
+        var lines = items.SelectMany(p => new[]
+        {
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"  {(p.Read ? "|08 " : "|10*")} |14#{p.Id}|08 · |15{PipeCodes.Escape(p.Handle)}|08 · {Ui.Stamp(p.SentAt)}|07"),
+            $"      |07{PipeCodes.Escape(p.Message)}|07",
+        }).ToList();
         if (!pages.IsOk)
         {
-            await Term.WriteAsync(Ui.Failure(pages), cancellationToken);
+            lines.Add(Ui.FailureText(pages));
         }
         else if (items.Count == 0)
         {
-            await SayAsync("|08  No pages. Nobody needs you. Enjoy it.|07\r\n", cancellationToken);
+            lines.Add("|08  No pages. Nobody needs you. Enjoy it.|07");
         }
 
-        var lines = items.SelectMany(p => new[]
-        {
-            Ui.P(string.Create(
-                CultureInfo.InvariantCulture,
-                $"  {(p.Read ? "|08 " : "|10*")} |14#{p.Id}|08 · |15{PipeCodes.Escape(p.Handle)}|08 · {Ui.Stamp(p.SentAt)}|07")),
-            Ui.P($"      |07{PipeCodes.Escape(p.Message)}|07"),
-        }).ToList();
-        await Ui.PageAsync(Term, lines, 18, cancellationToken);
+        await view.PageAsync(Term, SysopPagesArt.Body, SysopPagesArt.More, lines, cancellationToken);
         foreach (var p in items.Where(p => !p.Read))
         {
             _ = await Context.Api.MarkPageReadAsync(p.Id, cancellationToken);
         }
 
-        await Ui.PressAnyKeyAsync(Term, cancellationToken);
+        await view.PressAnyKeyAsync(Term, cancellationToken);
     }
 
     private async Task DeleteAsync(CancellationToken cancellationToken)

@@ -1,5 +1,4 @@
 using System.Globalization;
-using Pizon.Doors.Sdk;
 using Pizon.Doors.Sdk.Text;
 using Pizon.Web.Client.Api;
 using Pizon.Web.Client.Services;
@@ -8,7 +7,8 @@ using Pizon.Web.Client.Terminal;
 namespace Pizon.Web.Client.Screens;
 
 /// <summary>
-/// Shared screen pieces: headers, the status line, the callers-online line, prompts and paging.
+/// Shared screen pieces: menu items, the callers-online text, prompts and the standard messages. Screen
+/// layout itself lives in the compiled art (<c>Screens/Art</c>); these are the values bound into it.
 /// </summary>
 public static class Ui
 {
@@ -26,74 +26,45 @@ public static class Ui
     public static string P(string text) => PipeCodes.ToAnsi(text);
 
     /// <summary>
-    /// Builds a two-line section header.
-    /// </summary>
-    /// <param name="title">The section title.</param>
-    /// <returns>ANSI text ending with a blank line.</returns>
-    public static string Header(string title)
-    {
-        ArgumentNullException.ThrowIfNull(title);
-        var bar = new string('═', 78);
-        return P($"|#033{bar}\r\n |11{TextWrap.Fit(title.ToUpperInvariant(), 60)}|#244{"PIZON BBS",17}\r\n|#033{bar}|07\r\n\r\n");
-    }
-
-    /// <summary>
-    /// Builds the status header line (SysOp, node, date, mood, location, caller).
-    /// </summary>
-    /// <param name="session">The call.</param>
-    /// <param name="presence">Presence, for the node number.</param>
-    /// <param name="sysop">The SysOp's name.</param>
-    /// <param name="mood">The SysOp's mood.</param>
-    /// <param name="location">The SysOp's location.</param>
-    /// <param name="now">The current time.</param>
-    /// <returns>ANSI text for one or two lines.</returns>
-    public static string StatusHeader(BbsSession session, IPresence presence, string sysop, string mood, string location, DateTimeOffset now)
-    {
-        ArgumentNullException.ThrowIfNull(session);
-        ArgumentNullException.ThrowIfNull(presence);
-        var date = now.ToString("ddd MMM dd yyyy", CultureInfo.InvariantCulture).ToUpperInvariant();
-        return P(string.Create(
-            CultureInfo.InvariantCulture,
-            $"|08SysOp: |15{sysop}|08 · Node |11{presence.NodeNumber}|08 of |11{presence.Online}|08 · |07{date}\r\n" +
-            $"|08Mood: |13{mood}|08 · Location: |13{location}|08 · Caller: |14{session.Handle}|08 (Lvl {session.Level})|07\r\n"));
-    }
-
-    /// <summary>
-    /// Builds the callers-online line for row 25, or an empty string when only this caller is online.
+    /// Builds the callers-online text for the menu's bottom row.
     /// </summary>
     /// <param name="presence">Presence.</param>
-    /// <returns>ANSI text that draws (or clears) row 25 without moving the cursor.</returns>
-    public static string OnlineLine(IPresence presence)
+    /// <returns>Pipe-code text, or an empty string when only this caller is online.</returns>
+    public static string OnlineText(IPresence presence)
     {
         ArgumentNullException.ThrowIfNull(presence);
-        var body = presence.Online > 1
-            ? P(string.Create(
-                CultureInfo.InvariantCulture,
-                $"|08>> |11{presence.Online}|08 callers online · nodes busy: |07{string.Join(',', presence.Nodes)}|08 <<|07"))
+        return presence.Online > 1
+            ? string.Create(CultureInfo.InvariantCulture, $"|08>> |11{presence.Online}|08 callers online · nodes busy: |07{string.Join(',', presence.Nodes)}|08 <<|07")
             : string.Empty;
-        return Ansi.SaveCursor + Ansi.MoveTo(25, 1) + Ansi.EraseToEndOfLine + body + Ansi.RestoreCursor;
     }
 
     /// <summary>
-    /// Builds the "access denied" message for guests.
+    /// Builds the "access denied" message for guests, as pipe-code text.
+    /// </summary>
+    /// <param name="session">The call.</param>
+    /// <returns>Two lines of pipe-code text.</returns>
+    public static string AccessDeniedText(BbsSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"|09ACCESS DENIED - SECURITY LEVEL {SecurityLevels.User} REQUIRED. YOU ARE LEVEL {session.Level} ({PipeCodes.Escape(session.Handle)}).|07\n" +
+            $"|08Sign in with Discord from the main menu: |14[D]|07");
+    }
+
+    /// <summary>
+    /// Builds the "access denied" message for guests, for writing at the cursor.
     /// </summary>
     /// <param name="session">The call.</param>
     /// <returns>ANSI text.</returns>
-    public static string AccessDenied(BbsSession session)
-    {
-        ArgumentNullException.ThrowIfNull(session);
-        return P(string.Create(
-            CultureInfo.InvariantCulture,
-            $"\r\n|09ACCESS DENIED - SECURITY LEVEL {SecurityLevels.User} REQUIRED. YOU ARE LEVEL {session.Level} ({session.Handle}).|07\r\n" +
-            $"|08Sign in with Discord from the main menu: |14[D]|07\r\n"));
-    }
+    public static string AccessDenied(BbsSession session) => P("\r\n" + AccessDeniedText(session).Replace("\n", "\r\n", StringComparison.Ordinal) + "\r\n");
 
     /// <summary>
-    /// Builds the message shown when an API call fails.
+    /// Builds the message shown when an API call fails, as pipe-code text.
     /// </summary>
     /// <param name="result">The failed result.</param>
-    /// <returns>ANSI text.</returns>
-    public static string Failure(ApiResult result)
+    /// <returns>One line of pipe-code text.</returns>
+    public static string FailureText(ApiResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
         var text = result.Status switch
@@ -101,14 +72,21 @@ public static class Ui
             ApiStatus.Unauthorized => "|09ACCESS DENIED - SIGN IN FIRST.",
             ApiStatus.Forbidden => "|09ACCESS DENIED - THE SYSOP HAS SPOKEN.",
             ApiStatus.RateLimited => "|09SLOW DOWN, SPEED RACER. THE LINE NEEDS A MOMENT TO COOL OFF.",
-            ApiStatus.Invalid => "|09REJECTED: " + (result.Error ?? "invalid input").ToUpperInvariant(),
+            ApiStatus.Invalid => "|09REJECTED: " + PipeCodes.Escape((result.Error ?? "invalid input").ToUpperInvariant()),
             _ => "|09LINE NOISE - THE SERVER DID NOT ANSWER. TRY AGAIN.",
         };
-        return P("\r\n" + text + "|07\r\n");
+        return text + "|07";
     }
 
     /// <summary>
-    /// Shows the "press any key" prompt and waits.
+    /// Builds the message shown when an API call fails, for writing at the cursor.
+    /// </summary>
+    /// <param name="result">The failed result.</param>
+    /// <returns>ANSI text.</returns>
+    public static string Failure(ApiResult result) => P("\r\n" + FailureText(result) + "\r\n");
+
+    /// <summary>
+    /// Shows the "press any key" prompt on the next line and waits.
     /// </summary>
     /// <param name="terminal">The terminal.</param>
     /// <param name="cancellationToken">Cancels the wait.</param>
@@ -121,37 +99,7 @@ public static class Ui
     }
 
     /// <summary>
-    /// Shows lines a page at a time with a "-- more --" prompt.
-    /// </summary>
-    /// <param name="terminal">The terminal.</param>
-    /// <param name="lines">ANSI lines (without line endings).</param>
-    /// <param name="pageSize">Lines per page.</param>
-    /// <param name="cancellationToken">Cancels paging.</param>
-    /// <returns><see langword="true"/> when all lines were shown; <see langword="false"/> when the caller quit early.</returns>
-    public static async Task<bool> PageAsync(ITerminal terminal, IReadOnlyList<string> lines, int pageSize, CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(terminal);
-        ArgumentNullException.ThrowIfNull(lines);
-        for (var i = 0; i < lines.Count; i++)
-        {
-            await terminal.WriteAsync(lines[i] + "\r\n", cancellationToken);
-            if ((i + 1) % pageSize == 0 && i + 1 < lines.Count)
-            {
-                await terminal.WriteAsync(P("|08-- more -- |14[Enter]|08 next page  |14[Q]|08 stop|07"), cancellationToken);
-                var key = await terminal.ReadKeyAsync(cancellationToken);
-                await terminal.WriteAsync("\r" + Ansi.EraseToEndOfLine, cancellationToken);
-                if (DoorKeys.Is(key, 'Q') || key == DoorKeys.Escape)
-                {
-                    return false;
-                }
-            }
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// Formats a hotkey menu item as a clickable hotspot.
+    /// Formats a hotkey menu item as a clickable hotspot, in ANSI.
     /// </summary>
     /// <param name="key">The key.</param>
     /// <param name="label">The label.</param>
@@ -159,6 +107,14 @@ public static class Ui
     /// <returns>ANSI text.</returns>
     public static string Item(string key, string label, string? keyLabel = null) =>
         Ansi.Hotspot(key, P($"|14[{keyLabel ?? key}]|07 {label}"));
+
+    /// <summary>
+    /// Formats a hotkey menu item as a clickable hotspot, in pipe codes (for binding into art).
+    /// </summary>
+    /// <param name="key">The key (a single key; trusted text).</param>
+    /// <param name="label">The label (pipe codes allowed; escape visitor text).</param>
+    /// <returns>Pipe-code text.</returns>
+    public static string ItemPipe(string key, string label) => $"|[{key}]|14[{key}]|07 {label}|07|]";
 
     /// <summary>
     /// Formats a timestamp for listings.

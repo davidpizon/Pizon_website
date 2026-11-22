@@ -1,5 +1,7 @@
 using Pizon.Doors.Sdk;
+using Pizon.Doors.Sdk.Text;
 using Pizon.Web.Client.Api;
+using Pizon.Web.Client.Content;
 using Pizon.Web.Client.Screens;
 using Pizon.Web.Client.Terminal;
 
@@ -70,27 +72,21 @@ public sealed class EntranceScreenTests
         Assert.Equal(TimeSpan.FromSeconds(1) + TimeSpan.FromMilliseconds(400), h.Terminal.Delayed);
     }
 
-    /// <summary>The welcome sprays the banner (or a fallback) with the status header.</summary>
-    /// <param name="hasArt">Whether the banner file exists.</param>
+    /// <summary>The welcome sprays the compiled banner art with the status lines filled in.</summary>
     /// <returns>A task that completes when the test is done.</returns>
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task WelcomeSpraysTheBanner(bool hasArt)
+    [Fact]
+    public async Task WelcomeSpraysTheBanner()
     {
         var h = new Harness();
-        if (hasArt)
-        {
-            h.Terminal.Art[WelcomeScreen.BannerUrl] = "GRAFFITI";
-        }
-
         var screen = new WelcomeScreen(h.Context);
         Assert.Equal(ScreenId.Login, await screen.RunAsync(h.Session, CancellationToken.None));
         Assert.Equal(ScreenId.Welcome, screen.Id);
         Assert.Equal([Transition.Spray], h.Terminal.Transitions);
-        Assert.Contains(hasArt ? "GRAFFITI" : "P I Z O N", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("SysOp: David Pizon", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("Mood: Calm", h.Terminal.Plain, StringComparison.Ordinal);
+        Assert.Contains("B · B · S", h.Terminal.Plain, StringComparison.Ordinal);
+        Assert.Contains("░", h.Terminal.Plain, StringComparison.Ordinal);
+        Assert.Contains("SysOp:", h.Terminal.Plain, StringComparison.Ordinal);
+        Assert.Contains("David Pizon", h.Terminal.Plain, StringComparison.Ordinal);
+        Assert.Contains("Calm", h.Terminal.Plain, StringComparison.Ordinal);
         Assert.Contains("Tag", h.Terminal.Plain, StringComparison.Ordinal);
     }
 }
@@ -149,12 +145,26 @@ public sealed class LoginScreenTests
         Assert.Contains("Dev sign-in", h.Terminal.Plain, StringComparison.Ordinal);
     }
 
-    /// <summary>Sign-in URLs come back to the resume address.</summary>
+    /// <summary>Sign-in URLs come back to the login screen, carrying the screen to open afterwards.</summary>
     [Fact]
     public void SignInUrlsResume()
     {
-        Assert.Equal("auth/discord?returnUrl=%2F%3Fresume%3Dlogin", LoginScreen.SignInUrl(dev: false));
-        Assert.Equal("auth/dev?user=tester&returnUrl=%2F%3Fresume%3Dlogin", LoginScreen.SignInUrl(dev: true));
+        Assert.Equal("auth/discord?returnUrl=%2Flogin%3Fresume%3D1", LoginScreen.SignInUrl(dev: false));
+        Assert.Equal("auth/dev?user=tester&returnUrl=%2Flogin%3Fresume%3D1%26returnUrl%3D%252Fpage", LoginScreen.SignInUrl(dev: true, "/page"));
+    }
+
+    /// <summary>After logging on, a linked screen opens instead of the menu; an entrance path is ignored.</summary>
+    /// <returns>A task that completes when the test is done.</returns>
+    [Fact]
+    public async Task AfterLoginOpensTheLinkedScreen()
+    {
+        var h = new Harness();
+        h.Session.Settings = h.Session.Settings with { RipCard = false };
+        h.Session.ReturnTo = "/bulletins";
+        Assert.Equal(ScreenId.Bulletins, await new LoginScreen(h.Context).AfterLoginAsync(h.Session, CancellationToken.None));
+        h.Session.ReturnTo = "/login";
+        Assert.Equal(ScreenId.MainMenu, await new LoginScreen(h.Context).AfterLoginAsync(h.Session, CancellationToken.None));
+        Assert.Null(h.Session.ReturnTo);
     }
 
     /// <summary>A signed-in caller without a handle picks one first.</summary>
@@ -173,9 +183,10 @@ public sealed class LoginScreenTests
     public async Task MembersAreWelcomedBack()
     {
         var h = new Harness().Member(sysop: true);
-        h.Session.SysopRequested = true;
+        h.Session.ReturnTo = "/sysop";
         Assert.Equal(ScreenId.SysopConsole, await new LoginScreen(h.Context).RunAsync(h.Session, CancellationToken.None));
-        Assert.False(h.Session.SysopRequested);
+        Assert.Null(h.Session.ReturnTo);
+        Assert.True(h.Session.SignedOn);
         Assert.Contains("WELCOME BACK, SysOp1", h.Terminal.Plain, StringComparison.Ordinal);
     }
 
@@ -350,15 +361,17 @@ public sealed class MainMenuScreenTests
 /// </summary>
 public sealed class UiTests
 {
-    /// <summary>Headers and status lines carry the expected text.</summary>
+    /// <summary>The welcome status lines and the small formatting helpers carry the expected text.</summary>
     [Fact]
-    public void BuildsHeadersAndStatus()
+    public void BuildsStatusAndItems()
     {
-        Assert.Contains("MAIN MENU", Ui.Header("Main menu"), StringComparison.Ordinal);
         var h = new Harness().Member();
-        var status = Ui.StatusHeader(h.Session, h.Presence, "David", "Calm", "Grid", new DateTimeOffset(2026, 11, 15, 0, 0, 0, TimeSpan.Zero));
+        var board = new BulletinBoard { Sysop = "David", Mood = "Calm", Location = "Grid" };
+        var status = PipeCodes.StripAnsi(WelcomeScreen.View(board, h.Session, h.Presence, new DateTimeOffset(2026, 11, 15, 0, 0, 0, TimeSpan.Zero)).Render());
         Assert.Contains("SUN NOV 15 2026", status, StringComparison.Ordinal);
         Assert.Contains("Neo", status, StringComparison.Ordinal);
+        Assert.Equal("|[Q]|14[Q]|07 Quit|07|]", Ui.ItemPipe("Q", "Quit"));
+        Assert.Contains("Neo", Ui.AccessDenied(h.Session), StringComparison.Ordinal);
         Assert.Equal("1,024", Ui.Size(1024));
         Assert.Contains("key:Q", Ui.Item("Q", "Quit"), StringComparison.Ordinal);
         Assert.Contains("[Enter]", Ui.Item(DoorKeys.Enter, "Go", "Enter"), StringComparison.Ordinal);
@@ -377,29 +390,11 @@ public sealed class UiTests
     public void DescribesFailures(ApiStatus status, string expected) =>
         Assert.Contains(expected, Ui.Failure(new ApiResult(status)), StringComparison.Ordinal);
 
-    /// <summary>Paging stops on Q and continues on Enter.</summary>
-    /// <returns>A task that completes when the test is done.</returns>
+    /// <summary>The online text is blank for a lone caller.</summary>
     [Fact]
-    public async Task PagesLines()
-    {
-        var lines = new[] { "a", "b", "c", "d", "e" };
-        var t = new FakeTerminal().Keys(DoorKeys.Enter, DoorKeys.Enter);
-        Assert.True(await Ui.PageAsync(t, lines, 2, CancellationToken.None));
-        Assert.Contains("e", t.Plain, StringComparison.Ordinal);
-
-        var q = new FakeTerminal().Keys("q");
-        Assert.False(await Ui.PageAsync(q, lines, 2, CancellationToken.None));
-        Assert.DoesNotContain("c", q.Plain.Replace("-- more --", string.Empty, StringComparison.Ordinal), StringComparison.Ordinal);
-
-        var esc = new FakeTerminal().Keys(DoorKeys.Escape);
-        Assert.False(await Ui.PageAsync(esc, lines, 2, CancellationToken.None));
-    }
-
-    /// <summary>The online line is blank for a lone caller.</summary>
-    [Fact]
-    public void OnlineLineHidesForOneCaller()
+    public void OnlineTextHidesForOneCaller()
     {
         var p = new FakePresence();
-        Assert.DoesNotContain("online", Ui.OnlineLine(p), StringComparison.Ordinal);
+        Assert.Equal(string.Empty, Ui.OnlineText(p));
     }
 }

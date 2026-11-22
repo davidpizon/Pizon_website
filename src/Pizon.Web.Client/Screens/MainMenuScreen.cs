@@ -1,6 +1,8 @@
-using System.Text;
+using System.Globalization;
 using Pizon.Doors.Sdk;
 using Pizon.Doors.Sdk.Text;
+using Pizon.Web.Client.Screens.Art;
+using Pizon.Web.Client.Screens.Rendering;
 using Pizon.Web.Client.Terminal;
 
 namespace Pizon.Web.Client.Screens;
@@ -48,41 +50,36 @@ public sealed class MainMenuScreen(ScreenContext context) : ScreenBase(context)
     }
 
     /// <summary>
-    /// Builds the menu text for a caller.
+    /// Binds the menu art for a caller: the items that depend on who is calling, the handle and level.
+    /// </summary>
+    /// <param name="session">The call.</param>
+    /// <returns>The bound view (the callers-online row is left empty).</returns>
+    public static ScreenView View(BbsSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        return new ScreenView(MainMenuArt.Instance)
+            .Set(MainMenuArt.ItemAccount, session.IsMember ? Ui.ItemPipe("H", "Change Handle") : Ui.ItemPipe("D", "Sign in with Discord"))
+            .Set(MainMenuArt.ItemLogout, session.Me.Authenticated ? Ui.ItemPipe("L", "Log out of Discord") : string.Empty)
+            .Set(MainMenuArt.ItemSysop, session.IsSysop ? Ui.ItemPipe("*", "|09SysOp Console") : string.Empty)
+            .Set(MainMenuArt.Handle, PipeCodes.Escape(session.Handle))
+            .Set(MainMenuArt.Level, session.Level.ToString(CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// Builds the menu screen for a caller.
     /// </summary>
     /// <param name="session">The call.</param>
     /// <returns>ANSI text for the whole menu screen (without the online line).</returns>
-    public static string Render(BbsSession session)
-    {
-        ArgumentNullException.ThrowIfNull(session);
-        var sb = new StringBuilder();
-        sb.Append(Ui.Cls).Append(Ui.Header("Main menu"));
-        sb.Append(Ui.P($"|#039   ╔{new string('═', 64)}╗\r\n"));
-        AppendRow(sb, Ui.Item("1", "System Bulletins"), Ui.Item("P", "Page the SysOp"));
-        AppendRow(sb, Ui.Item("2", "Message Boards"), session.IsMember ? Ui.Item("H", "Change Handle") : Ui.Item("D", "Sign in with Discord"));
-        AppendRow(sb, Ui.Item("3", "File Areas"), Ui.Item("S", "Terminal Settings"));
-        AppendRow(sb, Ui.Item("4", "Door Games"), Ui.Item("R", "RIP Welcome Card"));
-        AppendRow(sb, Ui.Item("5", "User List & Hall of Fame"), session.Me.Authenticated ? Ui.Item("L", "Log out of Discord") : string.Empty);
-        AppendRow(sb, string.Empty, Ui.Item("G", Ui.P("|13Goodbye - Logoff|07")));
-        if (session.IsSysop)
-        {
-            AppendRow(sb, Ui.Item("*", Ui.P("|09SysOp Console|07")), string.Empty);
-        }
-
-        sb.Append(Ui.P($"|#039   ╚{new string('═', 64)}╝|07\r\n\r\n"));
-        sb.Append(Ui.P($"|08   Connected as |14{PipeCodes.Escape(session.Handle)}|08 (Lvl {session.Level}) · Press a key, or click an option.|07\r\n\r\n"));
-        sb.Append(Ui.P("|11   Your choice: |07"));
-        return sb.ToString();
-    }
+    public static string Render(BbsSession session) => View(session).Render();
 
     /// <inheritdoc />
     public override async Task<ScreenId> RunAsync(BbsSession session, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(session);
-        await Term.TransitionAsync(Transition.Draw, Render(session), cancellationToken);
-        await Term.WriteAsync(Ui.OnlineLine(Context.Presence), cancellationToken);
+        var view = View(session).Set(MainMenuArt.Online, Ui.OnlineText(Context.Presence));
+        await Term.TransitionAsync(Transition.Draw, view.Render(), cancellationToken);
 
-        void OnPresenceChanged() => _ = Term.WriteAsync(Ui.OnlineLine(Context.Presence), CancellationToken.None);
+        void OnPresenceChanged() => _ = view.UpdateAsync(Term, MainMenuArt.Online, Ui.OnlineText(Context.Presence), CancellationToken.None);
         Context.Presence.Changed += OnPresenceChanged;
         try
         {
@@ -99,7 +96,7 @@ public sealed class MainMenuScreen(ScreenContext context) : ScreenBase(context)
 
                 if (key == DoorKeys.Escape)
                 {
-                    await SayAsync("\r\n|08   (To log off, press |14G|08.)|07", cancellationToken);
+                    await Term.WriteAsync(view.CursorHome() + Ui.P("|08(To log off, press |14G|08.)|07") + view.CursorHome(), cancellationToken);
                 }
             }
         }
@@ -107,15 +104,5 @@ public sealed class MainMenuScreen(ScreenContext context) : ScreenBase(context)
         {
             Context.Presence.Changed -= OnPresenceChanged;
         }
-    }
-
-    private static void AppendRow(StringBuilder sb, string left, string right)
-    {
-        var leftPlain = PipeCodes.VisibleLength(left);
-        var rightPlain = PipeCodes.VisibleLength(right);
-        sb.Append(Ui.P("|#039   ║ "))
-            .Append(left).Append(' ', Math.Max(1, 32 - leftPlain))
-            .Append(right).Append(' ', Math.Max(0, 31 - rightPlain))
-            .Append(Ui.P("|#039║|07\r\n"));
     }
 }

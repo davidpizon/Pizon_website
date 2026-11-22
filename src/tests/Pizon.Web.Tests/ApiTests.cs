@@ -362,6 +362,9 @@ public sealed class ApiTests : IAsyncDisposable
         {
             ("/", HttpStatusCode.OK, "boot"),
             ("/", HttpStatusCode.OK, "style=\"--term-glow: 0.1\""),
+            ("/bulletins", HttpStatusCode.OK, "boot"),
+            ("/login?error=failed", HttpStatusCode.OK, "boot"),
+            ("/sysop", HttpStatusCode.OK, "boot"),
             ("/healthz", HttpStatusCode.OK, "Healthy"),
             ("/plain", HttpStatusCode.OK, "PIZON BBS (plain text)"),
             ("/Error", HttpStatusCode.OK, "LINE NOISE"),
@@ -375,7 +378,7 @@ public sealed class ApiTests : IAsyncDisposable
         }
 
         using var discord = await client.GetAsync(new Uri("/auth/discord?returnUrl=/x", UriKind.Relative));
-        Assert.Equal("/?login=failed", discord.Headers.Location!.OriginalString);
+        Assert.Equal("/login?error=failed", discord.Headers.Location!.OriginalString);
         using var unsafeReturn = await client.GetAsync(new Uri("/auth/dev?user=sysop&returnUrl=//evil.example", UriKind.Relative));
         Assert.Equal("/", unsafeReturn.Headers.Location!.OriginalString);
     }

@@ -63,7 +63,7 @@ dotnet user-secrets --project src/Pizon.Web set "Discord:ClientId" "<id>"
 
 ## Deploying
 
-Needs Docker on your PC (Docker Desktop, or Podman with the docker CLI alias) and SSH access.
+Needs Docker Desktop or Podman Desktop on your PC (the script uses whichever it finds) and SSH access.
 
 ```powershell
 $env:PIZON_SERVER = "bbs@<vps-ip>"

@@ -388,18 +388,41 @@ internal sealed class FakePresence : IPresence
 }
 
 /// <summary>
-/// Records full-page navigations.
+/// Records full-page navigations and in-app address changes, and can play a Back/Forward move.
 /// </summary>
 internal sealed class FakeNavigator : IExternalNavigator
 {
     /// <inheritdoc />
+    public event EventHandler<Uri>? LocationChanged;
+
+    /// <inheritdoc />
     public Uri CurrentUri { get; set; } = new("http://localhost/");
 
-    /// <summary>Gets the navigations, in order.</summary>
+    /// <summary>Gets the full-page navigations, in order.</summary>
     public List<string> Navigations { get; } = [];
+
+    /// <summary>Gets the in-app address changes, in order.</summary>
+    public List<(string Path, bool Replace)> Moves { get; } = [];
 
     /// <inheritdoc />
     public void NavigateAway(string url) => Navigations.Add(url);
+
+    /// <inheritdoc />
+    public void Navigate(string path, bool replace)
+    {
+        Moves.Add((path, replace));
+        Go(path);
+    }
+
+    /// <summary>
+    /// Changes the address as the browser would (Back, Forward or a typed address) and raises the event.
+    /// </summary>
+    /// <param name="path">The new path.</param>
+    public void Go(string path)
+    {
+        CurrentUri = new Uri(new Uri("http://localhost/"), path);
+        LocationChanged?.Invoke(this, CurrentUri);
+    }
 }
 
 /// <summary>

@@ -1,6 +1,8 @@
 using Pizon.Doors.Sdk;
 using Pizon.Doors.Sdk.Text;
 using Pizon.Web.Client.Api;
+using Pizon.Web.Client.Screens.Art;
+using Pizon.Web.Client.Screens.Rendering;
 using Pizon.Web.Client.Terminal;
 
 namespace Pizon.Web.Client.Screens;
@@ -12,18 +14,22 @@ namespace Pizon.Web.Client.Screens;
 public sealed class LoginScreen(ScreenContext context) : ScreenBase(context)
 {
     /// <summary>Where Discord sends the caller back to.</summary>
-    public const string ResumeUrl = "/?resume=login";
+    public const string ResumeUrl = "/login?resume=1";
 
     /// <inheritdoc />
     public override ScreenId Id => ScreenId.Login;
 
     /// <summary>
-    /// Builds the sign-in URL.
+    /// Builds the sign-in URL. It comes back to <see cref="ResumeUrl"/>, carrying the screen to open afterwards.
     /// </summary>
     /// <param name="dev">Use the Development-only fake sign-in instead of Discord.</param>
+    /// <param name="returnTo">The routed path to open after signing in, if any.</param>
     /// <returns>The URL to navigate to.</returns>
-    public static string SignInUrl(bool dev) =>
-        (dev ? "auth/dev?user=tester&returnUrl=" : "auth/discord?returnUrl=") + Uri.EscapeDataString(ResumeUrl);
+    public static string SignInUrl(bool dev, string? returnTo = null)
+    {
+        var resume = returnTo is null ? ResumeUrl : ResumeUrl + "&returnUrl=" + Uri.EscapeDataString(returnTo);
+        return (dev ? "auth/dev?user=tester&returnUrl=" : "auth/discord?returnUrl=") + Uri.EscapeDataString(resume);
+    }
 
     /// <inheritdoc />
     public override async Task<ScreenId> RunAsync(BbsSession session, CancellationToken cancellationToken)
@@ -73,7 +79,7 @@ public sealed class LoginScreen(ScreenContext context) : ScreenBase(context)
             if (DoorKeys.Is(key, 'V') && session.Me.DevLoginEnabled)
             {
                 await SayAsync("\r\n|08Dialing the dev line...|07", cancellationToken);
-                Context.Navigator.NavigateAway(SignInUrl(dev: true));
+                Context.Navigator.NavigateAway(SignInUrl(dev: true, session.ReturnTo));
                 return ScreenId.Exit;
             }
 
@@ -86,7 +92,8 @@ public sealed class LoginScreen(ScreenContext context) : ScreenBase(context)
     }
 
     /// <summary>
-    /// Finishes logging in: joins presence and picks the RIP card or the main menu.
+    /// Finishes logging in: joins presence, then opens the screen the caller was linked to
+    /// (<see cref="BbsSession.ReturnTo"/>), or else the RIP card or the main menu.
     /// </summary>
     /// <param name="session">The call.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
@@ -94,12 +101,14 @@ public sealed class LoginScreen(ScreenContext context) : ScreenBase(context)
     public async Task<ScreenId> AfterLoginAsync(BbsSession session, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(session);
+        session.SignedOn = true;
         await Context.Presence.ConnectAsync(cancellationToken);
         await Term.DelayAsync(TimeSpan.FromMilliseconds(600), cancellationToken);
-        if (session.SysopRequested && session.IsSysop)
+        var returnTo = session.ReturnTo;
+        session.ReturnTo = null;
+        if (RouteTable.TryResolve(returnTo, out var route) && route.Screen is not (ScreenId.Connect or ScreenId.Login))
         {
-            session.SysopRequested = false;
-            return ScreenId.SysopConsole;
+            return route.Screen;
         }
 
         return session.Settings.RipCard ? ScreenId.RipCard : ScreenId.MainMenu;
@@ -118,8 +127,9 @@ public sealed class SignInScreen(ScreenContext context) : ScreenBase(context)
     /// <inheritdoc />
     public override async Task<ScreenId> RunAsync(BbsSession session, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(session);
         await SayAsync("\r\n|08Transferring you to the Discord switchboard... hold the line.|07", cancellationToken);
-        Context.Navigator.NavigateAway(LoginScreen.SignInUrl(dev: false));
+        Context.Navigator.NavigateAway(LoginScreen.SignInUrl(dev: false, session.ReturnTo));
         return ScreenId.Exit;
     }
 }
@@ -138,30 +148,27 @@ public sealed class HandleScreen(ScreenContext context, bool isNewUser) : Screen
     public override async Task<ScreenId> RunAsync(BbsSession session, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(session);
+        var view = new ScreenView(HandleArt.Instance).Set(HandleArt.Title, isNewUser ? "NEW USER - CHOOSE YOUR HANDLE" : "CHANGE HANDLE");
         if (!isNewUser && !session.IsMember)
         {
-            await Term.WriteAsync(Ui.AccessDenied(session), cancellationToken);
-            await Ui.PressAnyKeyAsync(Term, cancellationToken);
+            view.Set(HandleArt.Status, Ui.AccessDeniedText(session));
+            await Term.TransitionAsync(Transition.Wipe, view.Render(), cancellationToken);
+            await view.PressAnyKeyAsync(Term, cancellationToken);
             return ScreenId.MainMenu;
         }
 
-        await Term.TransitionAsync(Transition.Wipe, Ui.Cls + Ui.Header(isNewUser ? "New user - choose your handle" : "Change handle"), cancellationToken);
-        await SayAsync(
-            "|07Your handle is how the board knows you: |153-16|07 letters, digits, |15_|07 or |15-|07.\r\n" +
-            "|08Edit the suggestion or type your own. ESC to cancel.|07\r\n\r\n",
-            cancellationToken);
+        await Term.TransitionAsync(Transition.Wipe, view.Render(), cancellationToken);
         var suggestion = isNewUser ? session.Me.SuggestedHandle ?? string.Empty : session.Me.Handle ?? string.Empty;
         while (true)
         {
-            await SayAsync("|11Handle: |15", cancellationToken);
+            await Term.WriteAsync(view.RenderField(HandleArt.Handle) + view.MoveTo(HandleArt.Handle), cancellationToken);
             var handle = await LineEditor.ReadLineAsync(Term, Limits.HandleMax, suggestion, cancellationToken);
-            await SayAsync("|07\r\n", cancellationToken);
             if (handle is null)
             {
                 if (isNewUser)
                 {
                     session.ActingAsGuest = true;
-                    await SayAsync("|08No handle, no problem: connecting as |14GUEST|08 for this call.|07\r\n", cancellationToken);
+                    await view.UpdateAsync(Term, HandleArt.Status, "|08No handle, no problem: connecting as |14GUEST|08 for this call.|07", cancellationToken);
                     return await new LoginScreen(Context).AfterLoginAsync(session, cancellationToken);
                 }
 
@@ -170,7 +177,7 @@ public sealed class HandleScreen(ScreenContext context, bool isNewUser) : Screen
 
             if (!Limits.IsValidHandleShape(handle))
             {
-                await SayAsync("|09That handle won't fit through the phone line. 3-16 letters, digits, _ or -.|07\r\n", cancellationToken);
+                await view.UpdateAsync(Term, HandleArt.Status, "|09That handle won't fit through the phone line. 3-16 letters, digits, _ or -.|07", cancellationToken);
                 suggestion = handle;
                 continue;
             }
@@ -179,17 +186,17 @@ public sealed class HandleScreen(ScreenContext context, bool isNewUser) : Screen
             if (result.IsOk)
             {
                 session.Me = await Context.Api.GetMeAsync(cancellationToken);
-                await SayAsync($"|10Handle registered: |15{PipeCodes.Escape(handle)}|10. Welcome to PIZON BBS.|07\r\n", cancellationToken);
+                await view.UpdateAsync(Term, HandleArt.Status, $"|10Handle registered: |15{PipeCodes.Escape(handle)}|10. Welcome to PIZON BBS.|07", cancellationToken);
                 if (isNewUser)
                 {
                     return await new LoginScreen(Context).AfterLoginAsync(session, cancellationToken);
                 }
 
-                await Ui.PressAnyKeyAsync(Term, cancellationToken);
+                await view.PressAnyKeyAsync(Term, cancellationToken);
                 return ScreenId.MainMenu;
             }
 
-            await Term.WriteAsync(Ui.Failure(result), cancellationToken);
+            await view.UpdateAsync(Term, HandleArt.Status, Ui.FailureText(result), cancellationToken);
             suggestion = handle;
         }
     }

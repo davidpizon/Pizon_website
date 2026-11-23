@@ -15,7 +15,7 @@ const anim = await import(new URL("ansimation.js", JS));
 const { decodeCp437, stripSauce, decodeArt } = await import(new URL("cp437.js", JS));
 const { plan, mulberry32, EFFECTS, DURATIONS, SPRAY_STAGES } = await import(new URL("transitions.js", JS));
 const rip = await import(new URL("rip.js", JS));
-const { handshakeSchedule, PHONE_NUMBER, DTMF } = await import(new URL("audio.js", JS));
+const { handshakePlan, renderHandshake, SAMPLE_RATE, PHONE_NUMBER, DTMF } = await import(new URL("audio.js", JS));
 const sh = await import(new URL("sh-to-anim.mjs", TOOLS));
 
 /**
@@ -271,13 +271,66 @@ test("RIPscrip commands parse, draw and hit-test", () => {
   assert.equal(rip.RIP_HEIGHT, 350);
 });
 
-test("the handshake dials the BBS number and is repeatable", () => {
-  const a = handshakeSchedule(mulberry32(7));
-  const b = handshakeSchedule(mulberry32(7));
-  assert.deepEqual(a, b);
-  assert.deepEqual(a[1].freqs, DTMF[PHONE_NUMBER[0]]);
-  assert.equal(a.length, 1 + PHONE_NUMBER.length + 1 + 24 + 1);
-  assert.ok(a.every((e, i) => i === 0 || e.at >= a[i - 1].at));
+/**
+ * Measures how strongly a frequency is present in a stretch of samples (Goertzel magnitude, per sample).
+ * @param {Float32Array} samples The samples.
+ * @param {number} from First second.
+ * @param {number} to Last second.
+ * @param {number} freq The frequency (Hz).
+ * @returns {number} The relative magnitude.
+ */
+function strength(samples, from, to, freq) {
+  const start = Math.round(from * SAMPLE_RATE);
+  const end = Math.round(to * SAMPLE_RATE);
+  let re = 0;
+  let im = 0;
+  for (let i = start; i < end; i++) {
+    const a = (2 * Math.PI * freq * i) / SAMPLE_RATE;
+    re += samples[i] * Math.cos(a);
+    im += samples[i] * Math.sin(a);
+  }
+  return Math.hypot(re, im) / (end - start);
+}
+
+test("the handshake plan dials the BBS number, then runs the modem negotiation in order", () => {
+  const plan = handshakePlan();
+  assert.ok(plan.every((s, i) => i === 0 || Math.abs(s.at - (plan[i - 1].at + plan[i - 1].dur)) < 1e-9));
+  assert.equal(plan.filter((s) => s.kind === "dtmf").map((s) => s.digit).join(""), PHONE_NUMBER);
+  const order = plan.map((s) => s.kind).filter((k) => k !== "silence" && k !== "dtmf");
+  assert.deepEqual(order, ["dialTone", "ringback", "answerTone", "fskCall", "fskAnswer", "fskCall", "v32Tones", "probe", "training"]);
+});
+
+test("the rendered handshake is repeatable, in range and has each signal where the plan puts it", () => {
+  const a = renderHandshake(mulberry32(7));
+  assert.deepEqual(a, renderHandshake(mulberry32(7)));
+  const last = handshakePlan().at(-1);
+  assert.equal(a.length, Math.round((last.at + last.dur) * SAMPLE_RATE));
+  assert.ok(a.every((x) => x >= -1 && x <= 1));
+
+  const seg = (kind, n = 0) => handshakePlan().filter((s) => s.kind === kind)[n];
+  const louder = (s, hit, miss) => strength(a, s.at + 0.01, s.at + s.dur - 0.01, hit) > 5 * strength(a, s.at + 0.01, s.at + s.dur - 0.01, miss);
+  const first = seg("dtmf");
+  for (const f of DTMF[first.digit]) {
+    assert.ok(louder(first, f, 1000), `digit ${first.digit} has ${f} Hz`);
+  }
+  assert.ok(louder(seg("dialTone"), 440, 1000));
+  assert.ok(louder(seg("ringback"), 480, 1000));
+  assert.ok(louder(seg("answerTone"), 2100, 1400));
+  assert.ok(louder(seg("fskCall"), 980, 1750));
+  assert.ok(louder(seg("fskAnswer"), 1650, 1080));
+  assert.ok(louder(seg("v32Tones"), 1800, 1200));
+  assert.ok(louder(seg("probe"), 1500, 1575));
+  const training = seg("training");
+  assert.ok(strength(a, training.at, training.at + training.dur, 1800) > 0.001, "training carries energy around 1800 Hz");
+  const rms = (from, to) => {
+    const part = a.slice(Math.round(from * SAMPLE_RATE), Math.round(to * SAMPLE_RATE));
+    return Math.sqrt(part.reduce((sum, x) => sum + x * x, 0) / part.length);
+  };
+  const end = training.at + training.dur;
+  assert.equal(training.fade, 0.25);
+  assert.ok(rms(end - 0.05, end) < 0.3 * rms(end - 0.5, end - 0.3), "the hiss fades out over its last 0.25 s");
+  const quiet = seg("silence", 0);
+  assert.ok(a.slice(Math.round((quiet.at + 0.02) * SAMPLE_RATE), Math.round((quiet.at + quiet.dur) * SAMPLE_RATE)).every((x) => Math.abs(x) < 0.02));
 });
 
 test("the .sh converter builds frames from printf, echo, clear and sleep", () => {

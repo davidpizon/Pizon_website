@@ -1,0 +1,16 @@
+@page "/settings"
+@layout BbsLayout
+@inherits BbsPage
+@attribute [BbsAccess(ScreenAccess.Public)]
+
+<PageTitle>@RouteTable.Tab("Terminal settings")</PageTitle>
+<BbsScreen Art="SettingsArt.Instance">
+    <Field Slot="SettingsArt.Baud" Value="@Session.Settings.BaudLabel" />
+    <Field Slot="SettingsArt.Sound" Value="@OnOff(Session.Settings.Sound)" />
+    <Field Slot="SettingsArt.Rip" Value="@OnOff(Session.Settings.RipCard)" />
+    <Hotkey Key="B" OnPress="ChangeAsync" Label="Baud rate" />
+    <Hotkey Key="A" OnPress="ChangeAsync" Label="Modem sounds" />
+    <Hotkey Key="R" OnPress="ChangeAsync" Label="RIP welcome card" />
+    <Hotkey Key="Q" Href="/menu" Label="Back to the main menu" />
+    <Hotkey Key="@DoorKeys.Escape" Href="/menu" />
+</BbsScreen>

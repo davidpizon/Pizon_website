@@ -4,135 +4,16 @@ using Pizon.Doors.Sdk.Text;
 using Pizon.Web.Client.Api;
 using Pizon.Web.Client.Content;
 using Pizon.Web.Client.Screens;
+using Pizon.Web.Client.Screens.Pages;
 using Pizon.Web.Client.Terminal;
 
 namespace Pizon.Web.Client.Tests;
 
 /// <summary>
-/// Tests for writing on the message board (the legacy compose screen behind <c>/board/new</c> and <c>/board/reply</c>).
-/// </summary>
-public sealed class BoardComposeScreenTests
-{
-    private static readonly DateTimeOffset T0 = new(2026, 11, 1, 12, 0, 0, TimeSpan.Zero);
-
-    /// <summary>Guests are refused and nothing is posted.</summary>
-    /// <returns>A task that completes when the test is done.</returns>
-    [Fact]
-    public async Task GuestsCannotPost()
-    {
-        var h = new Harness();
-        h.Terminal.Keys("x");
-        var screen = new BoardComposeScreen(h.Context, reply: false);
-        Assert.Equal(ScreenId.MessageBoard, await screen.RunAsync(h.Session, CancellationToken.None));
-        Assert.Equal(ScreenId.BoardNew, screen.Id);
-        Assert.Contains("ACCESS DENIED", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Empty(h.Api.Calls);
-    }
-
-    /// <summary>A member posts, fails to reply to a missing message, replies, and abandons a message.</summary>
-    /// <returns>A task that completes when the test is done.</returns>
-    [Fact]
-    public async Task MemberPostsAndReplies()
-    {
-        var h = new Harness().Member();
-        h.Api.Messages = new(ApiStatus.Ok, [new MessageDto(1, null, "Trinity", "First!", T0)]);
-        h.Terminal
-            .Type("Hello").Keys(DoorKeys.Enter, "x")
-            .Type("99").Keys("x")
-            .Type("abc").Keys("x")
-            .Type("1").Type("Reply").Keys(DoorKeys.Enter, "x")
-            .Keys(DoorKeys.Escape, "x");
-        var post = new BoardComposeScreen(h.Context, reply: false);
-        var reply = new BoardComposeScreen(h.Context, reply: true);
-        await post.RunAsync(h.Session, CancellationToken.None);
-        await reply.RunAsync(h.Session, CancellationToken.None);
-        await reply.RunAsync(h.Session, CancellationToken.None);
-        await reply.RunAsync(h.Session, CancellationToken.None);
-        await post.RunAsync(h.Session, CancellationToken.None);
-
-        Assert.Equal(ScreenId.BoardReply, reply.Id);
-        Assert.Equal(["post::Hello", "post:1:Reply"], h.Api.Calls);
-        Assert.Contains("MESSAGE QUEUED FOR SYSOP REVIEW", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("No such message", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("Message abandoned", h.Terminal.Plain, StringComparison.Ordinal);
-    }
-
-    /// <summary>A rejected post shows why.</summary>
-    /// <returns>A task that completes when the test is done.</returns>
-    [Fact]
-    public async Task ShowsPostFailures()
-    {
-        var h = new Harness().Member();
-        h.Api.WriteResult = new ApiResult(ApiStatus.RateLimited);
-        h.Terminal.Type("Hi").Keys(DoorKeys.Enter, "x");
-        await new BoardComposeScreen(h.Context, reply: false).RunAsync(h.Session, CancellationToken.None);
-        Assert.Contains("SPEED RACER", h.Terminal.Plain, StringComparison.Ordinal);
-    }
-}
-
-/// <summary>
-/// Tests for the Page SysOp, settings, goodbye, logout and RIP card screens.
+/// Tests for the goodbye, logout and RIP card screens.
 /// </summary>
 public sealed class SectionScreenTests
 {
-    /// <summary>Guests can't page; members can cancel, page, or hit the rate limit.</summary>
-    /// <returns>A task that completes when the test is done.</returns>
-    [Fact]
-    public async Task PagesTheSysop()
-    {
-        var guest = new Harness();
-        guest.Terminal.Keys("x");
-        var screen = new PageSysopScreen(guest.Context);
-        Assert.Equal(ScreenId.MainMenu, await screen.RunAsync(guest.Session, CancellationToken.None));
-        Assert.Equal(ScreenId.PageSysop, screen.Id);
-        Assert.Contains("ACCESS DENIED", guest.Terminal.Plain, StringComparison.Ordinal);
-
-        var h = new Harness().Member();
-        h.Terminal.Keys(DoorKeys.Escape, "x").Type("Hi there").Keys("x");
-        await new PageSysopScreen(h.Context).RunAsync(h.Session, CancellationToken.None);
-        await new PageSysopScreen(h.Context).RunAsync(h.Session, CancellationToken.None);
-        Assert.Contains("Page cancelled", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("SysOp has been alerted", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Equal(3, h.Terminal.Beeps);
-        Assert.Equal(["page:Hi there"], h.Api.Calls);
-
-        h.Api.WriteResult = new ApiResult(ApiStatus.RateLimited);
-        h.Terminal.Type("again").Keys("x");
-        await new PageSysopScreen(h.Context).RunAsync(h.Session, CancellationToken.None);
-        Assert.Contains("SPEED RACER", h.Terminal.Plain, StringComparison.Ordinal);
-    }
-
-    /// <summary>Settings keys cycle baud and toggle sound and the RIP card.</summary>
-    [Fact]
-    public void AppliesSettingsKeys()
-    {
-        var s = new TerminalSettings();
-        Assert.Equal(0, SettingsScreen.Apply(s, "b")!.Baud);
-        Assert.True(SettingsScreen.Apply(s, "A")!.Sound);
-        Assert.False(SettingsScreen.Apply(s, "r")!.RipCard);
-        Assert.Null(SettingsScreen.Apply(s, "x"));
-        Assert.Contains("9600 BAUD", PipeCodes.StripAnsi(SettingsScreen.Render(s)), StringComparison.Ordinal);
-    }
-
-    /// <summary>The settings screen saves and applies each change.</summary>
-    /// <returns>A task that completes when the test is done.</returns>
-    [Fact]
-    public async Task SettingsScreenSaves()
-    {
-        var h = new Harness();
-        h.Terminal.Keys("B", "A", "R", "x", "Q");
-        var screen = new SettingsScreen(h.Context);
-        Assert.Equal(ScreenId.MainMenu, await screen.RunAsync(h.Session, CancellationToken.None));
-        Assert.Equal(ScreenId.Settings, screen.Id);
-        Assert.Equal(new TerminalSettings(0, true, false), h.Session.Settings);
-        Assert.Equal(3, h.Terminal.Applied.Count);
-        Assert.Equal(h.Session.Settings, await TerminalSettings.LoadAsync(h.Terminal));
-        Assert.Contains("INSTANT", h.Terminal.Plain, StringComparison.Ordinal);
-
-        h.Terminal.Keys(DoorKeys.Escape);
-        Assert.Equal(ScreenId.MainMenu, await screen.RunAsync(h.Session, CancellationToken.None));
-    }
-
     /// <summary>Goodbye reports the time online, hangs up and returns to Connect.</summary>
     /// <returns>A task that completes when the test is done.</returns>
     [Fact]
@@ -189,94 +70,6 @@ public sealed class SectionScreenTests
 }
 
 /// <summary>
-/// Tests for the SysOp console.
-/// </summary>
-public sealed class SysopConsoleScreenTests
-{
-    private static readonly DateTimeOffset T0 = new(2026, 11, 1, 12, 0, 0, TimeSpan.Zero);
-
-    private static readonly PendingMessageDto[] Queue =
-    [
-        new(1, null, "Neo", 10, "approve me", T0),
-        new(2, 1, "Spammer", 20, "buy now", T0),
-        new(3, null, "Skip", 30, "later", T0),
-    ];
-
-    /// <summary>Everyone but the SysOp goes straight back to the menu.</summary>
-    /// <returns>A task that completes when the test is done.</returns>
-    [Fact]
-    public async Task HiddenFromOthers()
-    {
-        var h = new Harness().Member();
-        var screen = new SysopConsoleScreen(h.Context);
-        Assert.Equal(ScreenId.SysopConsole, screen.Id);
-        Assert.Equal(ScreenId.MainMenu, await screen.RunAsync(h.Session, CancellationToken.None));
-        Assert.Empty(h.Terminal.Output);
-    }
-
-    /// <summary>The SysOp approves, bans, skips, reads pages and deletes a message.</summary>
-    /// <returns>A task that completes when the test is done.</returns>
-    [Fact]
-    public async Task ModeratesAndDeletes()
-    {
-        var h = new Harness().Member(sysop: true);
-        h.Api.Queue = new(ApiStatus.Ok, Queue);
-        h.Api.Pages = new(ApiStatus.Ok, [new SysopPageDto(5, "Neo", "hello", T0, false), new SysopPageDto(6, "Old", "seen", T0, true)]);
-        h.Terminal
-            .Keys("1", "z", "A", "B", "N")
-            .Keys("2", "x")
-            .Keys("3").Type("abc")
-            .Keys("3").Type("7").Keys("N")
-            .Keys("3").Type("7").Keys("Y", "x")
-            .Keys("9", "Q");
-        Assert.Equal(ScreenId.MainMenu, await new SysopConsoleScreen(h.Context).RunAsync(h.Session, CancellationToken.None));
-
-        Assert.Equal(["moderate:1:True", "ban:20", "moderate:2:False", "read:5", "delete:7"], h.Api.Calls);
-        Assert.Contains("[1/3]", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("reply to #1", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("hello", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("It never happened", h.Terminal.Plain, StringComparison.Ordinal);
-    }
-
-    /// <summary>Failures are shown, a failed ban doesn't reject, and Q leaves the queue.</summary>
-    /// <returns>A task that completes when the test is done.</returns>
-    [Fact]
-    public async Task ShowsFailures()
-    {
-        var h = new Harness().Member(sysop: true);
-        h.Api.Queue = new(ApiStatus.Ok, Queue);
-        h.Api.WriteResult = new ApiResult(ApiStatus.Forbidden);
-        h.Terminal
-            .Keys("1", "X", "x", "B", "x", "Q")
-            .Keys("3").Type("7").Keys("y", "x")
-            .Keys(DoorKeys.Escape);
-        await new SysopConsoleScreen(h.Context).RunAsync(h.Session, CancellationToken.None);
-
-        Assert.Equal(["moderate:1:False", "ban:20", "delete:7"], h.Api.Calls);
-        Assert.Contains("THE SYSOP HAS SPOKEN", h.Terminal.Plain, StringComparison.Ordinal);
-    }
-
-    /// <summary>Empty and failed lists say so.</summary>
-    /// <returns>A task that completes when the test is done.</returns>
-    [Fact]
-    public async Task EmptyAndFailedLists()
-    {
-        var h = new Harness().Member(sysop: true);
-        h.Terminal.Keys("1", "x", "2", "x", "q");
-        await new SysopConsoleScreen(h.Context).RunAsync(h.Session, CancellationToken.None);
-        Assert.Contains("Nothing waiting", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("No pages", h.Terminal.Plain, StringComparison.Ordinal);
-
-        var f = new Harness().Member(sysop: true);
-        f.Api.Queue = new(ApiStatus.Failed);
-        f.Api.Pages = new(ApiStatus.Failed);
-        f.Terminal.Keys("1", "x", "2", "x", "q");
-        await new SysopConsoleScreen(f.Context).RunAsync(f.Session, CancellationToken.None);
-        Assert.Equal(2, f.Terminal.Plain.Split("LINE NOISE").Length - 1);
-    }
-}
-
-/// <summary>
 /// Tests for the BBS loop.
 /// </summary>
 public sealed class BbsAppTests
@@ -316,12 +109,12 @@ public sealed class BbsAppTests
     public async Task OpensALinkStraightAway()
     {
         var h = new Harness().Member();
-        h.Navigator.CurrentUri = new Uri("http://localhost/settings");
+        await using var p = new PageHarness(h, "/settings");
+        p.Show<SettingsPage>();
         using var stop = new CancellationTokenSource();
-        h.Terminal.StopWhenEmpty = stop;
         h.Session.Me = MeResponse.Guest;
         var start = BbsApp.StartScreen(h.Navigator.CurrentUri, h.Session);
-        await h.App().RunAsync(h.Session, start, stop.Token);
+        await p.RunAppAsync(start, stop);
 
         Assert.Contains("TERMINAL SETTINGS", h.Terminal.Plain, StringComparison.Ordinal);
         Assert.DoesNotContain("Modem ready", h.Terminal.Plain, StringComparison.Ordinal);
@@ -342,13 +135,13 @@ public sealed class BbsAppTests
     {
         var h = new Harness();
         h.Session.Settings = h.Session.Settings with { RipCard = false };
-        h.Navigator.CurrentUri = new Uri("http://localhost/page");
+        await using var p = new PageHarness(h, "/page");
+        p.Show<PageSysopPage>();
         using var stop = new CancellationTokenSource();
-        h.Terminal.StopWhenEmpty = stop;
         h.Navigator.OnNavigate = path => StopAtMenu(path, stop);
         h.Terminal.Keys(DoorKeys.Enter, "x");
         var start = BbsApp.StartScreen(h.Navigator.CurrentUri, h.Session);
-        await h.App().RunAsync(h.Session, start, stop.Token);
+        await p.RunAppAsync(start, stop);
 
         Assert.Equal([("/login", true), ("/page", true), ("/menu", false)], h.Navigator.Moves);
         Assert.Contains("ACCESS DENIED", h.Terminal.Plain, StringComparison.Ordinal);
@@ -380,16 +173,19 @@ public sealed class BbsAppTests
     {
         var h = new Harness();
         h.Api.Me = new MeResponse(true, null, "Neo", 10, false, true, false);
+        await using var p = new PageHarness(h, "/handle/new");
+        p.Show<NewUserHandlePage>();
         h.Navigator.CurrentUri = new Uri("http://localhost/settings");
+        p.Show<SettingsPage>();
         using var stop = new CancellationTokenSource();
-        h.Terminal.StopWhenEmpty = stop;
         h.Terminal.Keys(DoorKeys.Escape);
         var start = BbsApp.StartScreen(h.Navigator.CurrentUri, h.Session);
-        await h.App().RunAsync(h.Session, start, stop.Token);
+        await p.RunAppAsync(start, stop);
 
         Assert.Contains("NEW USER - CHOOSE YOUR HANDLE", h.Terminal.Plain, StringComparison.Ordinal);
         Assert.Contains("TERMINAL SETTINGS", h.Terminal.Plain, StringComparison.Ordinal);
         Assert.True(h.Session.ActingAsGuest);
+        Assert.Equal([("/handle/new", true), ("/settings", true)], h.Navigator.Moves);
     }
 
     /// <summary>
@@ -401,9 +197,9 @@ public sealed class BbsAppTests
     public async Task FollowsBackAndForward()
     {
         var h = new Harness();
-        h.Navigator.CurrentUri = new Uri("http://localhost/settings");
+        await using var p = new PageHarness(h, "/settings");
+        p.Show<SettingsPage>();
         using var stop = new CancellationTokenSource();
-        h.Terminal.StopWhenEmpty = stop;
         h.Navigator.OnNavigate = path => StopAtMenu(path, stop);
         h.Terminal.Keys("x", "y");
         h.Terminal.OnRead = key =>
@@ -415,7 +211,7 @@ public sealed class BbsAppTests
                 h.Navigator.Go("/rip");
             }
         };
-        await h.App().RunAsync(h.Session, ScreenId.Settings, stop.Token);
+        await p.RunAppAsync(ScreenId.Settings, stop);
 
         Assert.Equal([("/menu", false)], h.Navigator.Moves);
         Assert.Contains("TERMINAL SETTINGS", h.Terminal.Plain, StringComparison.Ordinal);
@@ -464,7 +260,7 @@ public sealed class BbsAppTests
         using var stop = new CancellationTokenSource();
         h.Terminal.StopWhenEmpty = stop;
         h.Terminal.Keys(FakeTerminal.Crash);
-        await h.App().RunAsync(h.Session, ScreenId.Settings, stop.Token);
+        await h.App().RunAsync(h.Session, ScreenId.Login, stop.Token);
         Assert.Contains("LINE NOISE - CONNECTION LOST", h.Terminal.Plain, StringComparison.Ordinal);
         Assert.Contains("Modem ready", h.Terminal.Plain, StringComparison.Ordinal);
         Assert.True(stop.IsCancellationRequested);

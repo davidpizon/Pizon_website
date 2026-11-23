@@ -1,0 +1,18 @@
+@page "/page"
+@layout BbsLayout
+@inherits BbsPage
+@attribute [BbsAccess(ScreenAccess.Member)]
+
+<PageTitle>@RouteTable.Tab("Page the SysOp")</PageTitle>
+<BbsScreen Art="PageArt.Instance" Prompt="@prompt" OnKey="OnKey">
+    @if (Session.IsMember || done)
+    {
+        <BbsForm Model="model" StatusSlot="PageArt.Status" Status="@status" Disabled="@done" OnValidSubmit="SendAsync" OnCancel="SendAsync">
+            <InputField Slot="PageArt.Message" @bind-Value="model.Message" MaxLength="MaxLength" Label="Message" />
+        </BbsForm>
+    }
+    else
+    {
+        <Field Slot="PageArt.Status" Value="@Ui.AccessDeniedText(Session)" />
+    }
+</BbsScreen>

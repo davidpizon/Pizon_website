@@ -27,10 +27,29 @@ public abstract class BbsPage : ComponentBase, IDisposable
     /// Re-renders the page.
     /// </summary>
     /// <returns>A task that completes when the render is queued.</returns>
-    internal Task RefreshAsync() => InvokeAsync(StateHasChanged);
+    internal Task RefreshAsync() => InvokeAsync(() =>
+    {
+        OnBeforeDraw();
+        StateHasChanged();
+    });
 
     /// <inheritdoc />
     protected override void OnInitialized() => Host.AddRefresher(RefreshAsync);
+
+    /// <summary>
+    /// Runs just before the page's screen is drawn, once the call is known: the place to fill in defaults
+    /// that depend on who is calling (a suggested handle, say).
+    /// </summary>
+    protected virtual void OnBeforeDraw()
+    {
+    }
+
+    /// <summary>
+    /// Renders the page now, in the middle of a long-running handler (so a status line changes while the
+    /// handler goes on, as when paging the SysOp).
+    /// </summary>
+    /// <returns>A task that completes when the render has run.</returns>
+    protected Task ShowAsync() => InvokeAsync(StateHasChanged);
 
     /// <summary>
     /// Stops refreshing the page.

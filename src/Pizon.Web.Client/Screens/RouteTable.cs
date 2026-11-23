@@ -59,7 +59,8 @@ public static class RouteTable
         new(ScreenId.Goodbye, "/goodbye", "Goodbye", ScreenAccess.Public),
         new(ScreenId.PageSysop, "/page", "Page the SysOp", ScreenAccess.Member),
         new(ScreenId.ChangeHandle, "/handle", "Change handle", ScreenAccess.Member),
-        new(ScreenId.SysopConsole, "/sysop", "SysOp console", ScreenAccess.Sysop),
+        new(ScreenId.NewUserHandle, "/handle/new", "Choose your handle", ScreenAccess.Public),
+        new(ScreenId.SysopConsole, "/sysop", "SysOp console", ScreenAccess.Sysop, Nested: true),
     ];
 
     /// <summary>

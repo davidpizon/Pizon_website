@@ -1,0 +1,28 @@
+@page "/sysop/queue"
+@layout BbsLayout
+@inherits BbsPage
+@attribute [BbsAccess(ScreenAccess.Sysop)]
+
+<PageTitle>@RouteTable.Tab("Moderation queue")</PageTitle>
+<BbsScreen Art="@(Finished ? SysopPagesArt.Instance : SysopQueueArt.Instance)" Prompt="@(Finished ? Ui.AnyKey : null)" OnKey="OnKey" OnDrawn="LoadAsync">
+    @if (Finished)
+    {
+        <Field Slot="SysopPagesArt.Title" Value="@("MODERATION QUEUE")" />
+        <Field Slot="SysopPagesArt.Body" Value="@EmptyText" />
+    }
+    else
+    {
+        <Field Slot="SysopQueueArt.Head" Value="@(Current is { } m ? Head(m, index + 1, items!.Count) : "|08Fetching the queue...|07")" />
+        <Field Slot="SysopQueueArt.Body" Value="@PipeCodes.Escape(Current?.Body ?? string.Empty)" />
+        <Field Slot="SysopQueueArt.Status" Value="@status" />
+        @if (Current is not null)
+        {
+            <Hotkey Key="A" OnPress="ApproveAsync" Label="Approve" />
+            <Hotkey Key="X" OnPress="RejectAsync" Label="Reject" />
+            <Hotkey Key="B" OnPress="BanAsync" Label="Ban the author" />
+            <Hotkey Key="N" OnPress="Skip" Label="Skip" />
+        }
+    }
+    <Hotkey Key="Q" Href="/sysop" Label="Back to the console" />
+    <Hotkey Key="@DoorKeys.Escape" Href="/sysop" />
+</BbsScreen>

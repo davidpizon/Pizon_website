@@ -1,9 +1,5 @@
 using Pizon.Doors.Sdk;
 using Pizon.Doors.Sdk.Text;
-using Pizon.Web.Client.Api;
-using Pizon.Web.Client.Screens.Art;
-using Pizon.Web.Client.Screens.Rendering;
-using Pizon.Web.Client.Terminal;
 
 namespace Pizon.Web.Client.Screens;
 
@@ -131,73 +127,5 @@ public sealed class SignInScreen(ScreenContext context) : ScreenBase(context)
         await SayAsync("\r\n|08Transferring you to the Discord switchboard... hold the line.|07", cancellationToken);
         Context.Navigator.NavigateAway(LoginScreen.SignInUrl(dev: false, session.ReturnTo));
         return ScreenId.Exit;
-    }
-}
-
-/// <summary>
-/// "NEW USER - CHOOSE YOUR HANDLE" for first sign-ins, and [H] Change Handle afterwards.
-/// </summary>
-/// <param name="context">The shared screen context.</param>
-/// <param name="isNewUser">Whether this is the first sign-in (otherwise a handle change).</param>
-public sealed class HandleScreen(ScreenContext context, bool isNewUser) : ScreenBase(context)
-{
-    /// <inheritdoc />
-    public override ScreenId Id => isNewUser ? ScreenId.NewUserHandle : ScreenId.ChangeHandle;
-
-    /// <inheritdoc />
-    public override async Task<ScreenId> RunAsync(BbsSession session, CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(session);
-        var view = new ScreenView(HandleArt.Instance).Set(HandleArt.Title, isNewUser ? "NEW USER - CHOOSE YOUR HANDLE" : "CHANGE HANDLE");
-        if (!isNewUser && !session.IsMember)
-        {
-            view.Set(HandleArt.Status, Ui.AccessDeniedText(session));
-            await Term.TransitionAsync(Transition.Wipe, view.Render(), cancellationToken);
-            await view.PressAnyKeyAsync(Term, cancellationToken);
-            return ScreenId.MainMenu;
-        }
-
-        await Term.TransitionAsync(Transition.Wipe, view.Render(), cancellationToken);
-        var suggestion = isNewUser ? session.Me.SuggestedHandle ?? string.Empty : session.Me.Handle ?? string.Empty;
-        while (true)
-        {
-            await Term.WriteAsync(view.RenderField(HandleArt.Handle) + view.MoveTo(HandleArt.Handle), cancellationToken);
-            var handle = await LineEditor.ReadLineAsync(Term, Limits.HandleMax, suggestion, cancellationToken);
-            if (handle is null)
-            {
-                if (isNewUser)
-                {
-                    session.ActingAsGuest = true;
-                    await view.UpdateAsync(Term, HandleArt.Status, "|08No handle, no problem: connecting as |14GUEST|08 for this call.|07", cancellationToken);
-                    return await new LoginScreen(Context).AfterLoginAsync(session, cancellationToken);
-                }
-
-                return ScreenId.MainMenu;
-            }
-
-            if (!Limits.IsValidHandleShape(handle))
-            {
-                await view.UpdateAsync(Term, HandleArt.Status, "|09That handle won't fit through the phone line. 3-16 letters, digits, _ or -.|07", cancellationToken);
-                suggestion = handle;
-                continue;
-            }
-
-            var result = await Context.Api.SetHandleAsync(handle, cancellationToken);
-            if (result.IsOk)
-            {
-                session.Me = await Context.Api.GetMeAsync(cancellationToken);
-                await view.UpdateAsync(Term, HandleArt.Status, $"|10Handle registered: |15{PipeCodes.Escape(handle)}|10. Welcome to PIZON BBS.|07", cancellationToken);
-                if (isNewUser)
-                {
-                    return await new LoginScreen(Context).AfterLoginAsync(session, cancellationToken);
-                }
-
-                await view.PressAnyKeyAsync(Term, cancellationToken);
-                return ScreenId.MainMenu;
-            }
-
-            await view.UpdateAsync(Term, HandleArt.Status, Ui.FailureText(result), cancellationToken);
-            suggestion = handle;
-        }
     }
 }

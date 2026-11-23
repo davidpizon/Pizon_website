@@ -1,0 +1,17 @@
+@page "/sysop/delete"
+@layout BbsLayout
+@inherits BbsPage
+@attribute [BbsAccess(ScreenAccess.Sysop)]
+
+<PageTitle>@RouteTable.Tab("Delete a message")</PageTitle>
+<BbsScreen Art="SysopDeleteArt.Instance" Prompt="@prompt" OnKey="OnKey">
+    @if (Session.IsSysop)
+    {
+        <BbsForm Model="model" StatusSlot="SysopDeleteArt.Status" Status="@status" Disabled="@(confirming || done)" OnValidSubmit="Confirm" OnCancel="Back">
+            <DataAnnotationsValidator />
+            <InputField Slot="SysopDeleteArt.Number" @bind-Value="model.Number" MaxLength="9" Label="Message number" />
+        </BbsForm>
+        <Hotkey Key="Y" OnPress="DeleteAsync" When="@confirming" Label="Yes, delete it" />
+        <Hotkey Key="N" OnPress="Keep" When="@confirming" Label="No, keep it" />
+    }
+</BbsScreen>

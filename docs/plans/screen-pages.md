@@ -1,14 +1,32 @@
 # Plan: BBS screens as routable, compiled Razor-style pages bound to .DUR/.ANS art
 
-Status: **phases 1-4 built.** Phase 1 (addresses on the existing screens) was built on 2026-11-17. Most
+Status: **phases 1-5 built.** Phase 1 (addresses on the existing screens) was built on 2026-11-17. Most
 of phases 2 and 3 followed on 2026-11-20: `TextLayout`, the `.dur` screen compiler (`Pizon.Screens.Generator`,
 diagnostics PZN001-PZN008), compiled art for every screen and `ScreenView`. Phase 4 (the page model) was
 built on 2026-11-22: `BbsHost`, `BbsPage`, `[BbsAccess]`, the `BbsScreen`, `Field`, `List` and `Hotkey`
 components, and pages for the main menu, bulletins (list, `/bulletins/{n}`, `/bulletins/top`), the message
-board, file areas (`/files`, `/files/{area}`), doors and the user list. Still to do: `.ans` compilation,
-forms (phase 5), animated art (phase 6) and the clean-up (phase 7). Two earlier changes from the plan:
+board, file areas (`/files`, `/files/{area}`), doors and the user list. Phase 5 (forms) was built on
+2026-11-23: `BbsForm`, `InputField`, `BlockEditor` and `TextBox`, and pages for settings, the handle, page
+SysOp, compose and the SysOp console. Still to do: `.ans` compilation, animated art (phase 6) and the
+clean-up (phase 7). Two earlier changes from the plan:
 hotspots are written `@[K] label@` (the label keeps its place), and 16-color Durdraw files are rejected
 (PZN002) for now.
+
+How phase 5 differs from the plan below:
+- **Login stays a legacy screen** until phase 7. It is a key menu with no art of its own, and its sign-in
+  sequence (Discord, guest, resume) moves into `BbsHost` with the clean-up.
+- **One page component per address.** The router reuses a component across its own `@page` routes, so a
+  page that differs by address gets its own component, with the shared logic in an abstract base:
+  `HandlePage` (`/handle`) and `NewUserHandlePage` (`/handle/new`, a new address) share `HandlePageBase`;
+  `BoardNewPage` and `BoardReplyPage` share `ComposePageBase`.
+- **The SysOp console is nested**: `/sysop/queue`, `/sysop/pages` and a new `/sysop/delete` (with new art,
+  `sysop-delete.dur`), which replaces the old console's delete prompt.
+- **The form's error goes to a status slot** (`BbsForm StatusSlot="…"`), not an `ERROR` slot; the arts
+  already had a status line. Validation is `DataAnnotations` through an `EditContext`.
+- **A compose draft survives leaving the page** (`BbsSession.ComposeDraft`), as the old compose screen did.
+- **Typing takes keys first.** While an input has the cursor, every key but Escape goes to it; Escape
+  cancels the form, or falls through to hotkeys when the form has no `OnCancel`. The terminal's line mode is
+  on only while an input has the cursor.
 
 How phase 4 differs from the plan below:
 - **No separate `ScreenComposer`.** `ScreenView` from phase 3 already is the view engine, so `BbsScreen` uses it
@@ -24,8 +42,7 @@ How phase 4 differs from the plan below:
 - **`[BbsAccess]` is checked by `RouteTable.Guard`**, as in phase 1. The attribute must agree with the route
   (a test checks).
 - **Routes.** `/board/{id}`, `/board/{id}/reply` and `/doors/{id}` aren't built. The message board's [N] and [R]
-  go to legacy compose screens at `/board/new` and `/board/reply`, which asks for the message number, until
-  forms land in phase 5.
+  go to compose pages at `/board/new` and `/board/reply` (which asks for the message number); see phase 5.
 - **`List`** turns the page on any key that no hotkey takes, as the old paging did, and runs `OnLastPage` once
   the last page shows. The bulletin #2 cam uses that to play until phase 6 moves it into a `<Slot>`.
 - **Imperative moments stay imperative.** Downloads and doors write to the terminal from a key handler, then

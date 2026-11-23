@@ -97,14 +97,20 @@ internal sealed class FakeTerminal : ITerminal, IBrowserStorage
     /// </summary>
     /// <param name="text">The text to type.</param>
     /// <returns>This terminal.</returns>
-    public FakeTerminal Type(string text)
+    public FakeTerminal Type(string text) => Press(text).Keys(DoorKeys.Enter);
+
+    /// <summary>
+    /// Queues each character of a string as a key, without Enter.
+    /// </summary>
+    /// <param name="text">The text to type.</param>
+    /// <returns>This terminal.</returns>
+    public FakeTerminal Press(string text)
     {
         foreach (var c in text)
         {
             keys.Enqueue(c.ToString());
         }
 
-        keys.Enqueue(DoorKeys.Enter);
         return this;
     }
 

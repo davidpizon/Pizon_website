@@ -343,6 +343,15 @@ function screens() {
         11: `|11   SysOp command: |07${slot("CURSOR", 8)}`,
       }),
     },
+    "sysop-delete": {
+      rows: screen({
+        1: header("DELETE A MESSAGE"),
+        5: "|07   Deletes the message and all its replies. There is no undo. ESC goes back.",
+        7: `|11   Message #: |07${slot("?NUMBER", 11)}`,
+        9: [`   ${slot("STATUS", 76)}`, `   ${slot("^", 76)}`],
+        12: `|07   ${slot("CURSOR", 8)}`,
+      }),
+    },
     "sysop-queue": {
       rows: screen({
         1: header("MODERATION QUEUE"),

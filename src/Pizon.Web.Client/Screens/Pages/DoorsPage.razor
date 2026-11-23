@@ -1,0 +1,14 @@
+@page "/doors"
+@layout BbsLayout
+@inherits BbsPage
+@attribute [BbsAccess(ScreenAccess.Public)]
+
+<PageTitle>@RouteTable.Tab("Door games")</PageTitle>
+@if (doors is not null)
+{
+    <BbsScreen @ref="screen" Art="DoorsArt.Instance" OnKey="EnterAsync">
+        <List Slot="DoorsArt.List" Items="@Items" />
+        <Hotkey Key="Q" Href="/menu" Label="Back to the main menu" />
+        <Hotkey Key="@DoorKeys.Escape" Href="/menu" />
+    </BbsScreen>
+}

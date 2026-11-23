@@ -9,118 +9,27 @@ using Pizon.Web.Client.Terminal;
 namespace Pizon.Web.Client.Tests;
 
 /// <summary>
-/// Tests for the bulletins screen.
+/// Tests for writing on the message board (the legacy compose screen behind <c>/board/new</c> and <c>/board/reply</c>).
 /// </summary>
-public sealed class BulletinsScreenTests
-{
-    /// <summary>The caller reads both bulletins and the Top Players board, then leaves.</summary>
-    /// <returns>A task that completes when the test is done.</returns>
-    [Fact]
-    public async Task ReadsBulletinsAndTopPlayers()
-    {
-        var h = new Harness();
-        h.Api.Scores = new(ApiStatus.Ok, [new ScoreEntry(1, "Neo", 1234)]);
-        h.Terminal.Keys("1", "x", "2", "x", "T", "x", "9", "Q");
-        var screen = new BulletinsScreen(h.Context);
-        Assert.Equal(ScreenId.MainMenu, await screen.RunAsync(h.Session, CancellationToken.None));
-
-        Assert.Equal(ScreenId.Bulletins, screen.Id);
-        Assert.Contains("Bulletin #1: Now", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("(updated today)", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("Hello world", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("SysOp cam is live", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Equal(2, h.Terminal.Animations.Count);
-        Assert.True(h.Terminal.Animations[1].Options.Loop);
-        Assert.Contains("The Modem Oracle - SEEKERS", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("1,234", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Equal(["scores:oracle:2026-11-15"], h.Api.Calls);
-    }
-
-    /// <summary>Empty boards and no scored doors say so; ESC leaves.</summary>
-    /// <returns>A task that completes when the test is done.</returns>
-    [Fact]
-    public async Task EmptyTopPlayers()
-    {
-        var h = new Harness();
-        h.Terminal.Keys("t", "x", DoorKeys.Escape);
-        await new BulletinsScreen(h.Context).RunAsync(h.Session, CancellationToken.None);
-        Assert.Contains("Nobody yet", h.Terminal.Plain, StringComparison.Ordinal);
-
-        var none = new Harness();
-        none.Http.With("content/doors.json", """{ "doors": [] }""");
-        none.Terminal.Keys("t", "x", "q");
-        await new BulletinsScreen(none.Context).RunAsync(none.Session, CancellationToken.None);
-        Assert.Contains("No scored doors", none.Terminal.Plain, StringComparison.Ordinal);
-    }
-
-}
-
-/// <summary>
-/// Tests for the message board.
-/// </summary>
-public sealed class MessageBoardScreenTests
+public sealed class BoardComposeScreenTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 11, 1, 12, 0, 0, TimeSpan.Zero);
 
-    /// <summary>Threads put replies under their parents, oldest first, with depth capped at 4.</summary>
-    [Fact]
-    public void ThreadsMessages()
-    {
-        var messages = new List<MessageDto>
-        {
-            new(2, 1, "b", "reply", T0.AddMinutes(2)),
-            new(1, null, "a", "root", T0),
-            new(9, 99, "z", "orphan", T0.AddMinutes(1)),
-            new(3, 2, "c", "r2", T0.AddMinutes(3)),
-            new(4, 3, "d", "r3", T0.AddMinutes(4)),
-            new(5, 4, "e", "r4", T0.AddMinutes(5)),
-            new(6, 5, "f", "r5", T0.AddMinutes(6)),
-        };
-        var thread = MessageBoardScreen.Thread(messages);
-        Assert.Equal([1L, 2, 3, 4, 5, 6, 9], thread.Select(t => t.Message.Id));
-        Assert.Equal([0, 1, 2, 3, 4, 4, 0], thread.Select(t => t.Depth));
-    }
-
-    /// <summary>Messages are escaped so visitors can't inject color codes.</summary>
-    [Fact]
-    public void FormatsMessagesSafely()
-    {
-        var lines = MessageBoardScreen.FormatMessage(new MessageDto(7, null, "x|14y", "hi |09red", T0), 1);
-        var plain = string.Join("\n", lines.Select(PipeCodes.StripToPlain));
-        Assert.Contains("#7", plain, StringComparison.Ordinal);
-        Assert.Contains("x|14y", plain, StringComparison.Ordinal);
-        Assert.Contains("hi |09red", plain, StringComparison.Ordinal);
-        Assert.Contains("└", plain, StringComparison.Ordinal);
-    }
-
-    /// <summary>Guests read a blank wall and are refused when posting.</summary>
+    /// <summary>Guests are refused and nothing is posted.</summary>
     /// <returns>A task that completes when the test is done.</returns>
     [Fact]
     public async Task GuestsCannotPost()
     {
         var h = new Harness();
-        h.Terminal.Keys("N", "x", "z", "Q");
-        var screen = new MessageBoardScreen(h.Context);
-        Assert.Equal(ScreenId.MainMenu, await screen.RunAsync(h.Session, CancellationToken.None));
-        Assert.Equal(ScreenId.MessageBoard, screen.Id);
-        Assert.Contains("The wall is blank", h.Terminal.Plain, StringComparison.Ordinal);
+        h.Terminal.Keys("x");
+        var screen = new BoardComposeScreen(h.Context, reply: false);
+        Assert.Equal(ScreenId.MessageBoard, await screen.RunAsync(h.Session, CancellationToken.None));
+        Assert.Equal(ScreenId.BoardNew, screen.Id);
         Assert.Contains("ACCESS DENIED", h.Terminal.Plain, StringComparison.Ordinal);
         Assert.Empty(h.Api.Calls);
     }
 
-    /// <summary>A failed load shows line noise.</summary>
-    /// <returns>A task that completes when the test is done.</returns>
-    [Fact]
-    public async Task ShowsLoadFailures()
-    {
-        var h = new Harness();
-        h.Api.Messages = new(ApiStatus.Failed);
-        h.Terminal.Keys(DoorKeys.Escape);
-        await new MessageBoardScreen(h.Context).RunAsync(h.Session, CancellationToken.None);
-        Assert.Contains("LINE NOISE", h.Terminal.Plain, StringComparison.Ordinal);
-    }
-
-    /// <summary>A member posts, fails to reply to a missing message, replies, abandons, and leaves.</summary>
+    /// <summary>A member posts, fails to reply to a missing message, replies, and abandons a message.</summary>
     /// <returns>A task that completes when the test is done.</returns>
     [Fact]
     public async Task MemberPostsAndReplies()
@@ -128,15 +37,21 @@ public sealed class MessageBoardScreenTests
         var h = new Harness().Member();
         h.Api.Messages = new(ApiStatus.Ok, [new MessageDto(1, null, "Trinity", "First!", T0)]);
         h.Terminal
-            .Keys("N").Type("Hello").Keys(DoorKeys.Enter, "x")
-            .Keys("R").Type("99").Keys("x")
-            .Keys("R").Type("1").Type("Reply").Keys(DoorKeys.Enter, "x")
-            .Keys("N", DoorKeys.Escape, "x")
-            .Keys("Q");
-        await new MessageBoardScreen(h.Context).RunAsync(h.Session, CancellationToken.None);
+            .Type("Hello").Keys(DoorKeys.Enter, "x")
+            .Type("99").Keys("x")
+            .Type("abc").Keys("x")
+            .Type("1").Type("Reply").Keys(DoorKeys.Enter, "x")
+            .Keys(DoorKeys.Escape, "x");
+        var post = new BoardComposeScreen(h.Context, reply: false);
+        var reply = new BoardComposeScreen(h.Context, reply: true);
+        await post.RunAsync(h.Session, CancellationToken.None);
+        await reply.RunAsync(h.Session, CancellationToken.None);
+        await reply.RunAsync(h.Session, CancellationToken.None);
+        await reply.RunAsync(h.Session, CancellationToken.None);
+        await post.RunAsync(h.Session, CancellationToken.None);
 
+        Assert.Equal(ScreenId.BoardReply, reply.Id);
         Assert.Equal(["post::Hello", "post:1:Reply"], h.Api.Calls);
-        Assert.Contains("First!", h.Terminal.Plain, StringComparison.Ordinal);
         Assert.Contains("MESSAGE QUEUED FOR SYSOP REVIEW", h.Terminal.Plain, StringComparison.Ordinal);
         Assert.Contains("No such message", h.Terminal.Plain, StringComparison.Ordinal);
         Assert.Contains("Message abandoned", h.Terminal.Plain, StringComparison.Ordinal);
@@ -149,103 +64,17 @@ public sealed class MessageBoardScreenTests
     {
         var h = new Harness().Member();
         h.Api.WriteResult = new ApiResult(ApiStatus.RateLimited);
-        h.Terminal.Keys("N").Type("Hi").Keys(DoorKeys.Enter, "x", "Q");
-        await new MessageBoardScreen(h.Context).RunAsync(h.Session, CancellationToken.None);
+        h.Terminal.Type("Hi").Keys(DoorKeys.Enter, "x");
+        await new BoardComposeScreen(h.Context, reply: false).RunAsync(h.Session, CancellationToken.None);
         Assert.Contains("SPEED RACER", h.Terminal.Plain, StringComparison.Ordinal);
     }
 }
 
 /// <summary>
-/// Tests for the file areas.
-/// </summary>
-public sealed class FileAreasScreenTests
-{
-    /// <summary>The caller opens an area, downloads a good file and a missing one, and backs out.</summary>
-    /// <returns>A task that completes when the test is done.</returns>
-    [Fact]
-    public async Task BrowsesAndDownloads()
-    {
-        var h = new Harness();
-        h.Terminal.Keys("Z", "a", "5", "1", "x", "2", "x", DoorKeys.Escape, "Q");
-        var screen = new FileAreasScreen(h.Context);
-        Assert.Equal(ScreenId.MainMenu, await screen.RunAsync(h.Session, CancellationToken.None));
-
-        Assert.Equal(ScreenId.FileAreas, screen.Id);
-        Assert.Equal([new Uri("https://example.com/good")], h.Terminal.Opened);
-        Assert.Contains("GOOD.ZIP", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("(2 files)", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("TRY DRIVE B:", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("Opening example.com", h.Terminal.Plain, StringComparison.Ordinal);
-    }
-
-    /// <summary>The progress bar fills proportionally and clamps.</summary>
-    [Fact]
-    public void DrawsProgress()
-    {
-        Assert.Equal(15, PipeCodes.StripAnsi(FileAreasScreen.ProgressBar(50)).Count(c => c == '█'));
-        Assert.Equal(0, PipeCodes.StripAnsi(FileAreasScreen.ProgressBar(-5)).Count(c => c == '█'));
-        Assert.Equal(30, PipeCodes.StripAnsi(FileAreasScreen.ProgressBar(150)).Count(c => c == '█'));
-    }
-}
-
-/// <summary>
-/// Tests for the doors list, user list, Page SysOp, settings, goodbye, logout and RIP card screens.
+/// Tests for the Page SysOp, settings, goodbye, logout and RIP card screens.
 /// </summary>
 public sealed class SectionScreenTests
 {
-    /// <summary>Guests see locks and are refused; open doors run; Q leaves.</summary>
-    /// <returns>A task that completes when the test is done.</returns>
-    [Fact]
-    public async Task DoorsListRunsDoors()
-    {
-        var h = new Harness();
-        h.Loader.Door = new LambdaDoor(c => c.WriteAsync("INSIDE THE DOOR"));
-        h.Terminal.Keys("2", "x", "1", "x", "7", "Q");
-        var screen = new DoorsScreen(h.Context);
-        Assert.Equal(ScreenId.MainMenu, await screen.RunAsync(h.Session, CancellationToken.None));
-
-        Assert.Equal(ScreenId.Doors, screen.Id);
-        Assert.Contains("[LOCKED - LVL 10]", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("[SCORED]", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("ACCESS DENIED", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("INSIDE THE DOOR", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("closed for repairs", PipeCodes.StripAnsi(DoorsScreen.Render([], h.Session)), StringComparison.Ordinal);
-    }
-
-    /// <summary>The user list shows the hall of fame and recent callers.</summary>
-    /// <returns>A task that completes when the test is done.</returns>
-    [Fact]
-    public async Task UserListShowsFameAndCallers()
-    {
-        var h = new Harness();
-        h.Api.Callers = new(ApiStatus.Ok, [new CallerDto("Neo", DateTimeOffset.UnixEpoch, 10)]);
-        h.Terminal.Keys("x");
-        var screen = new UserListScreen(h.Context);
-        Assert.Equal(ScreenId.MainMenu, await screen.RunAsync(h.Session, CancellationToken.None));
-        Assert.Equal(ScreenId.UserList, screen.Id);
-        Assert.Contains("Legend", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("LVL 99", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("Neo", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("https://example.com/legend", h.Terminal.Output, StringComparison.Ordinal);
-        Assert.Contains("The Ultimate Oldschool PC Font Pack", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("CC BY-SA 4.0", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("https://int10h.org/oldschool-pc-fonts/", h.Terminal.Output, StringComparison.Ordinal);
-        Assert.Contains("https://creativecommons.org/licenses/by-sa/4.0/", h.Terminal.Output, StringComparison.Ordinal);
-    }
-
-    /// <summary>A failed caller list says so, and an empty one says nobody signed.</summary>
-    /// <returns>A task that completes when the test is done.</returns>
-    [Fact]
-    public async Task UserListFailure()
-    {
-        var h = new Harness();
-        h.Api.Callers = new(ApiStatus.Failed);
-        h.Terminal.Keys("x");
-        await new UserListScreen(h.Context).RunAsync(h.Session, CancellationToken.None);
-        Assert.Contains("LINE NOISE", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("Nobody has signed the log yet", h.Terminal.Plain, StringComparison.Ordinal);
-    }
-
     /// <summary>Guests can't page; members can cancel, page, or hit the rate limit.</summary>
     /// <returns>A task that completes when the test is done.</returns>
     [Fact]
@@ -487,14 +316,14 @@ public sealed class BbsAppTests
     public async Task OpensALinkStraightAway()
     {
         var h = new Harness().Member();
-        h.Navigator.CurrentUri = new Uri("http://localhost/files");
+        h.Navigator.CurrentUri = new Uri("http://localhost/settings");
         using var stop = new CancellationTokenSource();
         h.Terminal.StopWhenEmpty = stop;
         h.Session.Me = MeResponse.Guest;
         var start = BbsApp.StartScreen(h.Navigator.CurrentUri, h.Session);
-        await new BbsApp(h.Context).RunAsync(h.Session, start, stop.Token);
+        await h.App().RunAsync(h.Session, start, stop.Token);
 
-        Assert.Contains("FILE AREAS", h.Terminal.Plain, StringComparison.Ordinal);
+        Assert.Contains("TERMINAL SETTINGS", h.Terminal.Plain, StringComparison.Ordinal);
         Assert.DoesNotContain("Modem ready", h.Terminal.Plain, StringComparison.Ordinal);
         Assert.Equal(h.Time.Now, h.Session.ConnectedAt);
         Assert.True(h.Session.SignedOn);
@@ -516,9 +345,10 @@ public sealed class BbsAppTests
         h.Navigator.CurrentUri = new Uri("http://localhost/page");
         using var stop = new CancellationTokenSource();
         h.Terminal.StopWhenEmpty = stop;
+        h.Navigator.OnNavigate = path => StopAtMenu(path, stop);
         h.Terminal.Keys(DoorKeys.Enter, "x");
         var start = BbsApp.StartScreen(h.Navigator.CurrentUri, h.Session);
-        await new BbsApp(h.Context).RunAsync(h.Session, start, stop.Token);
+        await h.App().RunAsync(h.Session, start, stop.Token);
 
         Assert.Equal([("/login", true), ("/page", true), ("/menu", false)], h.Navigator.Moves);
         Assert.Contains("ACCESS DENIED", h.Terminal.Plain, StringComparison.Ordinal);
@@ -533,9 +363,10 @@ public sealed class BbsAppTests
         h.Navigator.CurrentUri = new Uri("http://localhost/sysop");
         using var stop = new CancellationTokenSource();
         h.Terminal.StopWhenEmpty = stop;
+        h.Navigator.OnNavigate = path => StopAtMenu(path, stop);
         h.Terminal.Keys("x");
         var start = BbsApp.StartScreen(h.Navigator.CurrentUri, h.Session);
-        await new BbsApp(h.Context).RunAsync(h.Session, start, stop.Token);
+        await h.App().RunAsync(h.Session, start, stop.Token);
 
         Assert.Contains("FILE NOT FOUND ON THIS DRIVE", h.Terminal.Plain, StringComparison.Ordinal);
         Assert.DoesNotContain("SYSOP CONSOLE", h.Terminal.Plain, StringComparison.Ordinal);
@@ -549,15 +380,15 @@ public sealed class BbsAppTests
     {
         var h = new Harness();
         h.Api.Me = new MeResponse(true, null, "Neo", 10, false, true, false);
-        h.Navigator.CurrentUri = new Uri("http://localhost/files");
+        h.Navigator.CurrentUri = new Uri("http://localhost/settings");
         using var stop = new CancellationTokenSource();
         h.Terminal.StopWhenEmpty = stop;
         h.Terminal.Keys(DoorKeys.Escape);
         var start = BbsApp.StartScreen(h.Navigator.CurrentUri, h.Session);
-        await new BbsApp(h.Context).RunAsync(h.Session, start, stop.Token);
+        await h.App().RunAsync(h.Session, start, stop.Token);
 
         Assert.Contains("NEW USER - CHOOSE YOUR HANDLE", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("FILE AREAS", h.Terminal.Plain, StringComparison.Ordinal);
+        Assert.Contains("TERMINAL SETTINGS", h.Terminal.Plain, StringComparison.Ordinal);
         Assert.True(h.Session.ActingAsGuest);
     }
 
@@ -570,29 +401,31 @@ public sealed class BbsAppTests
     public async Task FollowsBackAndForward()
     {
         var h = new Harness();
+        h.Navigator.CurrentUri = new Uri("http://localhost/settings");
         using var stop = new CancellationTokenSource();
         h.Terminal.StopWhenEmpty = stop;
+        h.Navigator.OnNavigate = path => StopAtMenu(path, stop);
         h.Terminal.Keys("x", "y");
         h.Terminal.OnRead = key =>
         {
             if (key == "x")
             {
                 h.Navigator.Go("/nowhere");
-                h.Navigator.Go("/menu");
-                h.Navigator.Go("/bulletins");
+                h.Navigator.Go("/settings");
+                h.Navigator.Go("/rip");
             }
         };
-        await new BbsApp(h.Context).RunAsync(h.Session, ScreenId.MainMenu, stop.Token);
+        await h.App().RunAsync(h.Session, ScreenId.Settings, stop.Token);
 
         Assert.Equal([("/menu", false)], h.Navigator.Moves);
-        Assert.Contains("SYSTEM BULLETINS", h.Terminal.Plain, StringComparison.Ordinal);
+        Assert.Contains("TERMINAL SETTINGS", h.Terminal.Plain, StringComparison.Ordinal);
     }
 
     /// <summary>Every screen id but Exit has a screen.</summary>
     [Fact]
     public void CreatesEveryScreen()
     {
-        var app = new BbsApp(new Harness().Context);
+        var app = new Harness().App();
         foreach (var id in Enum.GetValues<ScreenId>())
         {
             var screen = app.Create(id);
@@ -616,7 +449,7 @@ public sealed class BbsAppTests
         h.Api.Me = MeResponse.Guest with { DevLoginEnabled = true };
         h.Session.Resumed = true;
         h.Terminal.Keys("v");
-        await new BbsApp(h.Context).RunAsync(h.Session, ScreenId.Login, CancellationToken.None);
+        await h.App().RunAsync(h.Session, ScreenId.Login, CancellationToken.None);
         Assert.Contains("CARRIER RESTORED", h.Terminal.Plain, StringComparison.Ordinal);
         Assert.Equal(h.Time.Now, h.Session.ConnectedAt);
         Assert.Single(h.Navigator.Navigations);
@@ -631,10 +464,19 @@ public sealed class BbsAppTests
         using var stop = new CancellationTokenSource();
         h.Terminal.StopWhenEmpty = stop;
         h.Terminal.Keys(FakeTerminal.Crash);
-        await new BbsApp(h.Context).RunAsync(h.Session, ScreenId.MainMenu, stop.Token);
+        await h.App().RunAsync(h.Session, ScreenId.Settings, stop.Token);
         Assert.Contains("LINE NOISE - CONNECTION LOST", h.Terminal.Plain, StringComparison.Ordinal);
         Assert.Contains("Modem ready", h.Terminal.Plain, StringComparison.Ordinal);
         Assert.True(stop.IsCancellationRequested);
+    }
+
+    /// <summary>Ends a test's call once the BBS moves to the main menu, which is a page this test doesn't render.</summary>
+    private static void StopAtMenu(string path, CancellationTokenSource stop)
+    {
+        if (path == "/menu")
+        {
+            stop.Cancel();
+        }
     }
 }
 

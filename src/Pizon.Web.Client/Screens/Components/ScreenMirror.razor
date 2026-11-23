@@ -1,0 +1,25 @@
+<section class="visually-hidden" aria-label="Screen text">
+    @foreach (var (_, value) in Screen.Values)
+    {
+        var text = Plain(value);
+        if (text.Length > 0)
+        {
+            <p>@text</p>
+        }
+    }
+    @foreach (var list in Screen.Lists)
+    {
+        <ul>
+            @foreach (var line in list.Items.Select(Plain).Where(l => l.Length > 0))
+            {
+                <li>@line</li>
+            }
+        </ul>
+    }
+    <ul>
+        @foreach (var hotkey in Screen.Hotkeys.Where(h => h.When && h.Href is not null))
+        {
+            <li><a href="@hotkey.Href">[@hotkey.Key] @(hotkey.Label ?? hotkey.Href)</a></li>
+        }
+    </ul>
+</section>

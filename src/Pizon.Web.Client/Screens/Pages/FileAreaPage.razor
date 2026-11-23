@@ -1,0 +1,23 @@
+@page "/files/{Area}"
+@layout BbsLayout
+@inherits BbsPage
+@attribute [BbsAccess(ScreenAccess.Public)]
+
+@if (!loaded)
+{
+    <PageTitle>@RouteTable.Tab("File areas")</PageTitle>
+}
+else if (area is null)
+{
+    <FileNotFound />
+}
+else
+{
+    <PageTitle>@RouteTable.Tab($"File area: {area.Name}")</PageTitle>
+    <BbsScreen @key="Area" @ref="screen" Art="FileAreaArt.Instance" OnKey="DownloadAsync">
+        <Field Slot="FileAreaArt.Title" Value="@($"FILE AREA: {area.Name.ToUpperInvariant()}")" />
+        <List Slot="FileAreaArt.List" Items="items" />
+        <Hotkey Key="Q" Href="/files" Label="Back to the file areas" />
+        <Hotkey Key="@DoorKeys.Escape" Href="/files" />
+    </BbsScreen>
+}

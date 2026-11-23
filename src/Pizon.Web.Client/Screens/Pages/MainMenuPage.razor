@@ -1,0 +1,28 @@
+@page "/menu"
+@layout BbsLayout
+@inherits BbsPage
+@attribute [BbsAccess(ScreenAccess.Public)]
+
+<PageTitle>@RouteTable.Tab("Main menu")</PageTitle>
+<BbsScreen @ref="screen" Art="MainMenuArt.Instance" Enter="Transition.Draw" Leave="Transition.Undraw" EchoKeys="true" OnKey="OnKey">
+    <Field Slot="MainMenuArt.ItemAccount" Value="@(Session.IsMember ? Ui.ItemPipe("H", "Change Handle") : Ui.ItemPipe("D", "Sign in with Discord"))" />
+    <Field Slot="MainMenuArt.ItemLogout" Value="@(Session.Me.Authenticated ? Ui.ItemPipe("L", "Log out of Discord") : string.Empty)" />
+    <Field Slot="MainMenuArt.ItemSysop" Value="@(Session.IsSysop ? Ui.ItemPipe("*", "|09SysOp Console") : string.Empty)" />
+    <Field Slot="MainMenuArt.Handle" Value="@PipeCodes.Escape(Session.Handle)" />
+    <Field Slot="MainMenuArt.Level" Value="@Session.Level" />
+    <Field Slot="MainMenuArt.Online" Value="@Ui.OnlineText(Presence)" />
+
+    <Hotkey Key="1" Href="/bulletins" Label="System Bulletins" />
+    <Hotkey Key="2" Href="/board" Label="Message Boards" />
+    <Hotkey Key="3" Href="/files" Label="File Areas" />
+    <Hotkey Key="4" Href="/doors" Label="Door Games" />
+    <Hotkey Key="5" Href="/users" Label="User List and Hall of Fame" />
+    <Hotkey Key="P" Href="/page" Label="Page the SysOp" />
+    <Hotkey Key="H" Href="/handle" Label="Change Handle" />
+    <Hotkey Key="S" Href="/settings" Label="Terminal Settings" />
+    <Hotkey Key="R" Href="/rip" Label="RIP Welcome Card" />
+    <Hotkey Key="G" Href="/goodbye" Label="Goodbye - Logoff" />
+    <Hotkey Key="D" Screen="ScreenId.SignIn" When="@(!Session.IsMember && Session.Me.DiscordEnabled)" />
+    <Hotkey Key="L" Screen="ScreenId.Logout" When="@Session.Me.Authenticated" />
+    <Hotkey Key="*" Href="/sysop" When="@Session.IsSysop" Label="SysOp Console" />
+</BbsScreen>

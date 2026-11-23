@@ -6,8 +6,8 @@
 Browser (Blazor WebAssembly, no prerender)                       Server (Pizon.Web, ASP.NET Core)
 ┌──────────────────────────────────────────────┐                 ┌─────────────────────────────────┐
 │ Screens (C#)  ──ANSI──►  Terminal (JS module)│                 │ Auth: cookie + Discord OAuth2   │
-│   BbsApp state machine     parser → buffer   │  /api, /auth    │ Minimal APIs (board, scores,    │
-│   ScreenId → IScreen       → DOM renderer    │ ◄─────────────► │   page SysOp, SysOp console)    │
+│   pages + BbsHost pump     parser → buffer   │  /api, /auth    │ Minimal APIs (board, scores,    │
+│   BbsApp (legacy screens)  → DOM renderer    │ ◄─────────────► │   page SysOp, SysOp console)    │
 │ Services: BbsApi, settings, presence, doors  │  /hubs/node     │ EF Core + SQLite (App_Data)     │
 │ Doors (lazy-loaded .wasm) via DoorHost       │ ◄─────────────► │ NodeHub (SignalR presence)      │
 └──────────────────────────────────────────────┘                 │ Notifier (ntfy / Discord hook)  │
@@ -15,9 +15,26 @@ Browser (Blazor WebAssembly, no prerender)                       Server (Pizon.W
 ```
 
 The terminal lives in `Layout/BbsLayout`, which every screen address shares, so it survives moving between
-screens. Screens are plain C# classes (`src/Pizon.Web.Client/Screens/`), not Razor components: each
-implements `IScreen`, writes ANSI to the terminal and reads keys, then returns the next `ScreenId`. `BbsApp`
-runs that loop. (The plan to turn screens into Razor pages is in [plans/screen-pages.md](plans/screen-pages.md).)
+screens. Screens come in two kinds while [plans/screen-pages.md](plans/screen-pages.md) is under way:
+
+- **Screen pages** (`Screens/Pages/*.razor`): the main menu, bulletins, Top Players, the message board, file
+  areas, doors and the user list. Each is an `@page` that inherits `BbsPage` and declares
+  `[BbsAccess(...)]`. It binds data to its compiled art with components that render no HTML
+  (`Screens/Components`):
+  - `<BbsScreen Art="…">` holds the screen, with its `Enter`/`Leave` transitions, `Prompt` and `OnKey`;
+  - `<Field Slot="…" Value="…">` binds one value;
+  - `<List Slot="…" Items="…" More="…">` pages lines through a block;
+  - `<Hotkey Key="…" Href="…">` goes to an address, or `Screen="…"` leaves for a screen with no address.
+
+  `Screens/Hosting/BbsHost` (one per tab) draws the page for the current address and pumps keys to it.
+  Hotkeys come first, then a list's next page, then `OnKey`. When a bound value changes while the page is on
+  screen, Razor's normal re-render sends just that slot to the terminal. The menu's callers-online row works
+  this way. `BbsScreen` also renders a visually hidden mirror of its text and real links for its hotkeys,
+  for screen readers.
+- **Legacy screens** (`Screens/*.cs`): the entrance, login, handle, compose, page SysOp, settings, goodbye,
+  RIP card and SysOp console. Each implements `IScreen`, writes ANSI and reads keys, then returns the next
+  `ScreenId`. `BbsApp` runs them in a loop. For a screen that is now a page, it runs `PageScreen`, which
+  hands the terminal to `BbsHost` until the address moves to another screen or a hotkey leaves for one.
 
 Each screen's layout is a Durdraw drawing in `Screens/Art`, compiled into a C# class at build time by
 `Pizon.Screens.Generator` (see [content.md](content.md#screen-art-srcpizonwebclientscreensartdur)). A screen
@@ -30,14 +47,18 @@ written directly.
 ## Screen addresses
 
 Each screen has its own address, so it can be bookmarked and shared, and Back and Forward work.
-`Screens/RouteTable.cs` lists them, and `Pages/Home.razor` has a matching `@page` for each one (a test
-checks the two agree).
+`Screens/RouteTable.cs` lists them. A page screen's `@page` serves its own address and any below it (a
+*nested* route: `/bulletins/2` still belongs to the bulletins screen, and its pages tell them apart).
+`Pages/Home.razor` has an `@page` for each legacy screen. A test checks that all three agree.
 
 | Address | Screen | Who can open it from a link |
 |---|---|---|
 | `/` | Dial-up, then the banner and login | anyone |
 | `/login` | Login (`resume=1` after Discord, `error=failed`, `returnUrl=/…`) | anyone |
-| `/menu`, `/bulletins`, `/board`, `/files`, `/doors`, `/users`, `/rip`, `/settings`, `/goodbye` | The matching screen | anyone |
+| `/menu`, `/board`, `/doors`, `/users`, `/rip`, `/settings`, `/goodbye` | The matching screen | anyone |
+| `/bulletins`, `/bulletins/{n}`, `/bulletins/top` | The bulletin list, one bulletin, Top Players | anyone |
+| `/files`, `/files/{area}` | The file areas, one area (`/files/tools`) | anyone |
+| `/board/new`, `/board/reply` | Write or reply on the message board | members |
 | `/page`, `/handle` | Page the SysOp, change handle | members |
 | `/sysop` | SysOp console | the SysOp |
 
@@ -46,7 +67,7 @@ checks the two agree).
   menu doesn't redial. When the address changes by itself (Back, Forward, a typed address), `BbsApp` stops
   the current screen and opens the one named.
 - **Links skip the dial-up.** Any address but `/` draws its screen straight away, after asking the server
-  who is calling.
+  who is calling. An unknown bulletin or file area shows "file not found".
 - **Access from a link.** A caller who hasn't logged on yet and opens a member or SysOp screen goes to
   `/login` first, then on to that screen. A signed-in caller who isn't the SysOp gets "file not found" for
   `/sysop`. Member screens still show ACCESS DENIED to guests themselves. The server enforces all of this

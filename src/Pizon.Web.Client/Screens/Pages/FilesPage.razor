@@ -1,0 +1,18 @@
+@page "/files"
+@layout BbsLayout
+@inherits BbsPage
+@attribute [BbsAccess(ScreenAccess.Public)]
+
+<PageTitle>@RouteTable.Tab("File areas")</PageTitle>
+@if (library is not null)
+{
+    <BbsScreen Art="FilesArt.Instance">
+        <List Slot="FilesArt.List" Items="items" />
+        <Hotkey Key="Q" Href="/menu" Label="Back to the main menu" />
+        <Hotkey Key="@DoorKeys.Escape" Href="/menu" />
+        @foreach (var (area, letter) in library.Areas.Take(26).Select((a, i) => (a, ((char)('A' + i)).ToString())))
+        {
+            <Hotkey @key="letter" Key="@letter" Href="@($"/files/{Slug(area.Name)}")" Label="@area.Name" />
+        }
+    </BbsScreen>
+}

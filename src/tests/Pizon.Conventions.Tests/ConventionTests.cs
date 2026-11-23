@@ -29,6 +29,23 @@ public sealed partial class ConventionTests
     }
 
     /// <summary>
+    /// Every screen page is a BBS page with a tab title and a declared access level (docs/plans/screen-pages.md §5, §7).
+    /// </summary>
+    [Fact]
+    public void ScreenPagesHaveTitlesAndAccess()
+    {
+        var pages = Directory.EnumerateFiles(Path.Combine(Src, "Pizon.Web.Client", "Screens", "Pages"), "*.razor").ToList();
+        Assert.NotEmpty(pages);
+        Assert.All(pages, page =>
+        {
+            var text = File.ReadAllText(page);
+            Assert.Contains("@inherits BbsPage", text, StringComparison.Ordinal);
+            Assert.Contains("@attribute [BbsAccess(", text, StringComparison.Ordinal);
+            Assert.Contains("<PageTitle>", text, StringComparison.Ordinal);
+        });
+    }
+
+    /// <summary>
     /// No source file turns warnings off with a pragma. EF Core migrations are exempt: <c>dotnet ef</c> generates
     /// them (with its own pragma) and they are never edited by hand.
     /// </summary>

@@ -22,7 +22,11 @@ public enum ScreenAccess
 /// <param name="Path">The path, starting with <c>/</c> (lower case, no trailing slash).</param>
 /// <param name="Title">The browser tab title (before " - PIZON BBS").</param>
 /// <param name="Access">Who may open it from a link.</param>
-public sealed record ScreenRoute(ScreenId Screen, string Path, string Title, ScreenAccess Access);
+/// <param name="Nested">
+/// Whether addresses under the path belong to the same screen too (<c>/bulletins/2</c> is still the
+/// bulletins screen); its pages tell them apart.
+/// </param>
+public sealed record ScreenRoute(ScreenId Screen, string Path, string Title, ScreenAccess Access, bool Nested = false);
 
 /// <summary>
 /// Maps screens to browser addresses and back, and decides what a caller sees when they open one.
@@ -34,15 +38,20 @@ public static class RouteTable
     /// <summary>The site name added to every tab title.</summary>
     public const string SiteName = "PIZON BBS";
 
-    /// <summary>Gets every routed screen. Every path here must also be an <c>@page</c> on <c>Pages.Home</c>.</summary>
+    /// <summary>
+    /// Gets every routed screen. Every path here must also be an <c>@page</c>: on a screen page in
+    /// <c>Screens/Pages</c>, or on <c>Pages.Home</c> for screens that are still legacy <see cref="IScreen"/> classes.
+    /// </summary>
     public static IReadOnlyList<ScreenRoute> All { get; } =
     [
         new(ScreenId.Connect, "/", "Dial in", ScreenAccess.Public),
         new(ScreenId.Login, "/login", "Log in", ScreenAccess.Public),
         new(ScreenId.MainMenu, "/menu", "Main menu", ScreenAccess.Public),
-        new(ScreenId.Bulletins, "/bulletins", "System bulletins", ScreenAccess.Public),
+        new(ScreenId.Bulletins, "/bulletins", "System bulletins", ScreenAccess.Public, Nested: true),
         new(ScreenId.MessageBoard, "/board", "Message boards", ScreenAccess.Public),
-        new(ScreenId.FileAreas, "/files", "File areas", ScreenAccess.Public),
+        new(ScreenId.BoardNew, "/board/new", "New message", ScreenAccess.Member),
+        new(ScreenId.BoardReply, "/board/reply", "Reply to a message", ScreenAccess.Member),
+        new(ScreenId.FileAreas, "/files", "File areas", ScreenAccess.Public, Nested: true),
         new(ScreenId.Doors, "/doors", "Door games", ScreenAccess.Public),
         new(ScreenId.UserList, "/users", "User list & hall of fame", ScreenAccess.Public),
         new(ScreenId.RipCard, "/rip", "RIP welcome card", ScreenAccess.Public),
@@ -61,7 +70,14 @@ public static class RouteTable
     public static ScreenRoute? For(ScreenId screen) => All.FirstOrDefault(r => r.Screen == screen);
 
     /// <summary>
-    /// Finds the route for a local path. Only plain site-relative paths are accepted (never <c>//host</c>
+    /// Builds a browser tab title.
+    /// </summary>
+    /// <param name="title">The screen's title.</param>
+    /// <returns>"Title - PIZON BBS".</returns>
+    public static string Tab(string title) => $"{title} - {SiteName}";
+
+    /// <summary>
+    /// Finds the route for a local path: its own route, or the nearest nested route above it. Only plain site-relative paths are accepted (never <c>//host</c>
     /// or <c>/\host</c>), so a <c>returnUrl</c> from a link can't send the caller anywhere else.
     /// </summary>
     /// <param name="path">The path, optionally with a query or fragment (ignored).</param>
@@ -77,7 +93,8 @@ public static class RouteTable
 
         var end = path.IndexOfAny(['?', '#']);
         var clean = Normalize(end < 0 ? path : path[..end]);
-        var found = All.FirstOrDefault(r => string.Equals(r.Path, clean, StringComparison.OrdinalIgnoreCase));
+        var found = All.FirstOrDefault(r => string.Equals(r.Path, clean, StringComparison.OrdinalIgnoreCase)) ??
+            All.Where(r => r.Nested && clean.StartsWith(r.Path + "/", StringComparison.OrdinalIgnoreCase)).MaxBy(r => r.Path.Length);
         if (found is null)
         {
             return false;

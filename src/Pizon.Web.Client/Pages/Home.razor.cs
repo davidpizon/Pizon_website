@@ -5,9 +5,10 @@ using Pizon.Web.Client.Screens;
 namespace Pizon.Web.Client.Pages;
 
 /// <summary>
-/// The page for every BBS screen address (one <c>@page</c> per <see cref="RouteTable"/> entry). It draws
-/// nothing itself: <see cref="Layout.BbsLayout"/> hosts the terminal and the BBS follows the address. It
-/// keeps the browser tab title in step with the screen.
+/// The page for the addresses of screens that are still legacy <see cref="IScreen"/> classes (one
+/// <c>@page</c> per such <see cref="RouteTable"/> entry; the others are pages in <c>Screens/Pages</c>). It
+/// draws nothing itself: <see cref="Layout.BbsLayout"/> hosts the terminal and the BBS follows the address.
+/// It keeps the browser tab title in step with the screen.
 /// </summary>
 public sealed partial class Home : IDisposable
 {
@@ -25,7 +26,7 @@ public sealed partial class Home : IDisposable
     /// <returns>"Screen - PIZON BBS", or just the site name.</returns>
     public static string TitleFor(string path) =>
         RouteTable.TryResolve(path, out var route) && route.Screen != ScreenId.Connect
-            ? $"{route.Title} - {RouteTable.SiteName}"
+            ? RouteTable.Tab(route.Title)
             : RouteTable.SiteName;
 
     /// <inheritdoc />

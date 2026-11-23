@@ -1,0 +1,16 @@
+@page "/board"
+@layout BbsLayout
+@inherits BbsPage
+@attribute [BbsAccess(ScreenAccess.Public)]
+
+<PageTitle>@RouteTable.Tab("Message boards")</PageTitle>
+<BbsScreen Art="BoardArt.Instance">
+    @if (lines is not null)
+    {
+        <List Slot="BoardArt.Body" Items="lines" More="BoardArt.More" />
+    }
+    <Hotkey Key="Q" Href="/menu" Label="Back to the main menu" />
+    <Hotkey Key="@DoorKeys.Escape" Href="/menu" />
+    <Hotkey Key="N" Href="/board/new" Label="Write a new message" />
+    <Hotkey Key="R" Href="/board/reply" Label="Reply to a message" />
+</BbsScreen>

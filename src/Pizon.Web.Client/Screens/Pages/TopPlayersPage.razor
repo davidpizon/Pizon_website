@@ -1,0 +1,14 @@
+@page "/bulletins/top"
+@layout BbsLayout
+@inherits BbsPage
+@attribute [BbsAccess(ScreenAccess.Public)]
+
+<PageTitle>@RouteTable.Tab("Top players")</PageTitle>
+<BbsScreen Art="TopPlayersArt.Instance" Prompt="@prompt" OnKey="OnKey">
+    @if (lines is not null)
+    {
+        <List Slot="TopPlayersArt.Body" Items="lines" More="TopPlayersArt.More" OnLastPage="@(() => prompt = Ui.AnyKey)" />
+    }
+    <Hotkey Key="Q" Href="/bulletins" Label="Back to the bulletins" />
+    <Hotkey Key="@DoorKeys.Escape" Href="/bulletins" />
+</BbsScreen>

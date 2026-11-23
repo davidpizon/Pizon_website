@@ -164,8 +164,8 @@ function voice(seg, rate, rng) {
 
 /**
  * Renders the whole handshake: every segment with 5 ms fades (no clicks; longer fade-outs where the
- * plan asks), then a phone-line band
- * limit (one-pole high-pass near 300 Hz and low-pass near 3400 Hz) and a faint line hiss.
+ * plan asks), then a phone-line band limit (one-pole high-pass near 300 Hz and low-pass near 3400 Hz)
+ * and a faint line hiss.
  * @param {() => number} rng Random source (bits, symbols, probe phases, hiss).
  * @param {number} [rate=SAMPLE_RATE] Sample rate.
  * @returns {Float32Array} The samples, each within [-1, 1].

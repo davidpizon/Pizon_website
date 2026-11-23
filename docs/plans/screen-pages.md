@@ -1,6 +1,6 @@
 # Plan: BBS screens as routable, compiled Razor-style pages bound to .DUR/.ANS art
 
-Status: **phases 1-6 built.** Phase 1 (addresses on the existing screens) was built on 2026-11-17. Most
+Status: **phases 1-7 built.** Phase 1 (addresses on the existing screens) was built on 2026-11-17. Most
 of phases 2 and 3 followed on 2026-11-20: `TextLayout`, the `.dur` screen compiler (`Pizon.Screens.Generator`,
 diagnostics PZN001-PZN008), compiled art for every screen and `ScreenView`. Phase 4 (the page model) was
 built on 2026-11-22: `BbsHost`, `BbsPage`, `[BbsAccess]`, the `BbsScreen`, `Field`, `List` and `Hotkey`
@@ -9,9 +9,26 @@ board, file areas (`/files`, `/files/{area}`), doors and the user list. Phase 5 
 2026-11-23: `BbsForm`, `InputField`, `BlockEditor` and `TextBox`, and pages for settings, the handle, page
 SysOp, compose and the SysOp console. Phase 6 (animation) was built on 2026-11-23: animated `.dur` art,
 `.anim.json` ranges, `compositor.js` background slots and `<Slot>`; the bulletin #2 cam plays in one.
-Still to do: `.ans` compilation and the clean-up (phase 7). Two earlier changes from the plan:
+Phase 7 (clean-up) was built on 2026-11-23: every screen is a page, `BbsHost` runs the call, and `BbsApp`,
+`ScreenId`, `IScreen` and the legacy screens are gone. Still to do: `.ans` compilation. Two earlier changes
+from the plan:
 hotspots are written `@[K] label@` (the label keeps its place), and 16-color Durdraw files are rejected
 (PZN002) for now.
+
+How phase 7 differs from the plan below:
+- **The last legacy screens became pages**, not host code: Connect (`/`, which plays the handshake on [C]),
+  login (`/login`, drawn on the welcome banner, which gained `STATUS`, `PROMPT` and `OPTIONS` slots), the
+  RIP card (`/rip`, over a one-line `rip.dur`) and goodbye (`/goodbye`). The welcome screen is no longer
+  separate: the login page sprays it on.
+- **`BbsHost` runs the call** (`RunAsync`): the start from the address (resume, error, `returnUrl`, links
+  straight in), `RouteTable.Guard`, the pump per route, Back and Forward, and the LINE NOISE recovery.
+  Routes are paths: `ScreenRoute` has no screen id, and the guard returns `Show`, `LogOnFirst` or
+  `NotFound`.
+- **Sign-in, log-on and logout are host methods** called from a page's handler (`SignInAsync`,
+  `LogOnAsync`, `LogOutAsync`), so `<Hotkey Screen="…">` is gone; hotkeys go to an `Href` or run `OnPress`.
+  `ReturnTo` keeps the full path (`/bulletins/2`, not just `/bulletins`).
+- **Removed builders:** `Ui.Item` and `ScreenView`'s `PageAsync`, `UpdateAsync` and `MoveTo`, used only by
+  the legacy screens.
 
 How phase 6 differs from the plan below:
 - **No fields inside animations yet.** Animated art may not contain placeholders (PZN007); it plays in a

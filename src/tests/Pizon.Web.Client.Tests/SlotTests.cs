@@ -1,6 +1,5 @@
 using Bunit;
 using Pizon.Doors.Sdk.Text;
-using Pizon.Web.Client.Screens;
 using Pizon.Web.Client.Screens.Art;
 using Pizon.Web.Client.Screens.Components;
 using Pizon.Web.Client.Screens.Rendering;
@@ -104,7 +103,7 @@ public sealed class SlotTests
                     break;
             }
         };
-        await p.RunAsync(ScreenId.Bulletins, "s", "r", "g", "x");
+        await p.RunAsync("s", "r", "g", "x");
 
         Assert.Equal(["CAM", "CAM"], p.H.Terminal.SlotsStarted.Select(s => s.Name));
         Assert.Equal(16, p.H.Terminal.SlotsStarted[0].Animation.Frames.Count);
@@ -120,7 +119,7 @@ public sealed class SlotTests
                 .Add(x => x.Art, SysopCamArt.Instance).Add(x => x.At, BulletinCamArt.Cam)));
             other.WaitForState(() => hidden.H.Host.ScreenCount > 0);
             hidden.H.Terminal.OnRead = _ => other.Render(ps => ps.Add(x => x.Art, BulletinArt.Instance));
-            await hidden.RunAsync(ScreenId.Bulletins, "g");
+            await hidden.RunAsync("g");
             Assert.Empty(hidden.H.Terminal.SlotsStarted);
             Assert.Empty(hidden.H.Terminal.SlotsStopped);
         }

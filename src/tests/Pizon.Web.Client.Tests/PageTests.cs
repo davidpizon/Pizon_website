@@ -63,19 +63,21 @@ internal sealed partial class PageHarness : IAsyncDisposable
     }
 
     /// <summary>
-    /// Runs the host's pump for a screen until the scripted keys run out or a page leaves for a screen.
+    /// Runs the host's pump for the current address's route until the scripted keys run out or the address
+    /// moves to another route.
     /// </summary>
-    /// <param name="screen">The screen whose pages run.</param>
     /// <param name="keys">The keys to press.</param>
-    /// <returns>The screen a page left for, or <see langword="null"/> when the keys ran out.</returns>
-    public async Task<ScreenId?> RunAsync(ScreenId screen, params string[] keys)
+    /// <returns>The path the address moved to, or <see langword="null"/> when the keys ran out.</returns>
+    public async Task<string?> RunAsync(params string[] keys)
     {
+        Assert.True(RouteTable.TryResolve(H.Host.CurrentPath, out var route));
         H.Terminal.Keys(keys);
         using var stop = new CancellationTokenSource();
         H.Terminal.StopWhenEmpty = stop;
         try
         {
-            return await Bunit.Renderer.Dispatcher.InvokeAsync(() => H.Host.RunPagesAsync(screen, stop.Token));
+            await Bunit.Renderer.Dispatcher.InvokeAsync(() => H.Host.RunPagesAsync(route.Path, stop.Token));
+            return H.Host.CurrentPath;
         }
         catch (OperationCanceledException)
         {
@@ -84,17 +86,16 @@ internal sealed partial class PageHarness : IAsyncDisposable
     }
 
     /// <summary>
-    /// Runs the whole BBS loop from a screen (pages already shown with <see cref="Show"/> draw when their
-    /// screen comes up) until the scripted keys run out or the test stops it.
+    /// Runs the whole call from the current address (pages already shown with <see cref="Show"/> draw when
+    /// their address comes up) until the scripted keys run out or the test stops it.
     /// </summary>
-    /// <param name="start">The first screen.</param>
     /// <param name="stop">Stops the call (also cancelled when the keys run out).</param>
     /// <returns>A task that completes when the call ends.</returns>
-    public async Task RunAppAsync(ScreenId start, CancellationTokenSource stop)
+    public async Task RunAppAsync(CancellationTokenSource stop)
     {
         ArgumentNullException.ThrowIfNull(stop);
         H.Terminal.StopWhenEmpty = stop;
-        await Bunit.Renderer.Dispatcher.InvokeAsync(() => H.App().RunAsync(H.Session, start, stop.Token));
+        await Bunit.Renderer.Dispatcher.InvokeAsync(() => H.Host.RunAsync(stop.Token));
     }
 
     /// <summary>
@@ -145,7 +146,7 @@ public sealed class MainMenuPageTests
                 p.H.Presence.Set(1, 2, 3);
             }
         };
-        Assert.Null(await p.RunAsync(ScreenId.MainMenu, DoorKeys.Escape, "z", "1"));
+        Assert.Equal("/bulletins", await p.RunAsync(DoorKeys.Escape, "z", "1"));
 
         Assert.Equal([Transition.Draw, Transition.Undraw], p.H.Terminal.Transitions);
         Assert.Contains("2 callers online", p.Plain, StringComparison.Ordinal);
@@ -177,7 +178,7 @@ public sealed class MainMenuPageTests
 
         await using var sysop = new PageHarness(new Harness().Member(sysop: true));
         var page = sysop.Show<MainMenuPage>();
-        await sysop.RunAsync(ScreenId.MainMenu);
+        await sysop.RunAsync();
         Assert.Contains("Change Handle", sysop.Plain, StringComparison.Ordinal);
         Assert.Contains("Log out of Discord", sysop.Plain, StringComparison.Ordinal);
         Assert.Contains("SysOp Console", sysop.Plain, StringComparison.Ordinal);
@@ -185,10 +186,13 @@ public sealed class MainMenuPageTests
         Assert.Equal("[*] SysOp Console", page.Find("a[href='/sysop']").TextContent);
     }
 
-    /// <summary>The menu's hotkeys go exactly where <see cref="MainMenuPage.Route"/> says, for every kind of caller.</summary>
+    /// <summary>
+    /// The menu's address hotkeys go exactly where <see cref="RipPage.Route"/> sends the RIP card's buttons,
+    /// for every kind of caller.
+    /// </summary>
     /// <returns>A task that completes when the test is done.</returns>
     [Fact]
-    public async Task HotkeysAgreeWithTheRouteMap()
+    public async Task HotkeysAgreeWithTheRipCard()
     {
         var guest = new Harness();
         guest.Session.Me = guest.Api.Me;
@@ -196,31 +200,44 @@ public sealed class MainMenuPageTests
         {
             await using var p = new PageHarness(h);
             var screen = p.Show<MainMenuPage>().FindComponent<BbsScreen>().Instance;
-            foreach (var key in "12345phsrgdl*zq".Select(c => c.ToString()).Append(DoorKeys.Enter))
+            foreach (var key in "12345phsg*zq".Select(c => c.ToString()).Append(DoorKeys.Enter))
             {
-                var hotkey = screen.Hotkeys.FirstOrDefault(k => k.Matches(key));
-                ScreenId? actual = hotkey is null ? null : hotkey.Screen ?? (RouteTable.TryResolve(hotkey.Href, out var r) ? r.Screen : null);
-                Assert.Equal(MainMenuPage.Route(key, h.Session), actual);
+                Assert.Equal(RipPage.Route(key, h.Session), screen.Hotkeys.FirstOrDefault(k => k.Matches(key))?.Href);
             }
         }
     }
 
-    /// <summary>Keys for screens without an address (log out, sign in) leave the pages for that screen.</summary>
+    /// <summary>
+    /// [L] logs out of Discord (reloading the BBS), and a refused logout says why and redraws the menu; [D]
+    /// leaves for Discord sign-in.
+    /// </summary>
     /// <returns>A task that completes when the test is done.</returns>
     [Fact]
-    public async Task LeavesForScreensWithoutAnAddress()
+    public async Task SignsInAndOut()
     {
         await using var member = new PageHarness(new Harness().Member());
         member.Show<MainMenuPage>();
-        Assert.Equal(ScreenId.Logout, await member.RunAsync(ScreenId.MainMenu, "L"));
-        Assert.Null(member.H.Host.Live);
-        Assert.Empty(member.H.Navigator.Moves);
+        Assert.Null(await member.RunAsync("L"));
+        Assert.Equal(["/"], member.H.Navigator.Navigations);
+        Assert.Equal(1, member.H.Presence.Disconnects);
+        Assert.Contains("Shredding your sign-in cookie", member.Plain, StringComparison.Ordinal);
+
+        var refused = new Harness().Member();
+        refused.Api.WriteResult = new ApiResult(ApiStatus.Failed);
+        await using var again = new PageHarness(refused);
+        again.Show<MainMenuPage>();
+        Assert.Null(await again.RunAsync("L", "x"));
+        Assert.Contains("LINE NOISE", again.Plain, StringComparison.Ordinal);
+        Assert.Equal(2, refused.Terminal.Transitions.Count);
+        Assert.Empty(refused.Navigator.Navigations);
 
         var h = new Harness();
         h.Session.Me = h.Api.Me;
         await using var guest = new PageHarness(h);
         guest.Show<MainMenuPage>();
-        Assert.Equal(ScreenId.SignIn, await guest.RunAsync(ScreenId.MainMenu, "d"));
+        Assert.Null(await guest.RunAsync("d"));
+        Assert.Equal([BbsHost.SignInUrl(dev: false)], h.Navigator.Navigations);
+        Assert.Contains("Discord switchboard", guest.Plain, StringComparison.Ordinal);
     }
 }
 
@@ -236,13 +253,13 @@ public sealed class BulletinPageTests
     {
         await using var p = new PageHarness(path: "/bulletins");
         var cut = p.Show<BulletinsPage>();
-        await p.RunAsync(ScreenId.Bulletins, "9", "1", "T", "q", DoorKeys.Escape);
+        Assert.Equal("/menu", await p.RunAsync("9", "1", "T", "q", DoorKeys.Escape));
 
         Assert.Equal([Transition.Wipe], p.H.Terminal.Transitions);
         Assert.Contains("SYSTEM BULLETINS", p.Plain, StringComparison.Ordinal);
         Assert.Contains("Bulletin #1: Now", p.Plain, StringComparison.Ordinal);
         Assert.Contains("(updated today)", p.Plain, StringComparison.Ordinal);
-        Assert.Equal([("/bulletins/1", false), ("/bulletins/top", false), ("/menu", false), ("/menu", false)], p.H.Navigator.Moves);
+        Assert.Equal([("/bulletins/1", false), ("/bulletins/top", false), ("/menu", false)], p.H.Navigator.Moves);
         Assert.Equal("[T] Top players", cut.Find("a[href='/bulletins/top']").TextContent);
         Assert.Contains("Bulletin #2: About", cut.Markup, StringComparison.Ordinal);
         p.AssertNoPlaceholders();
@@ -255,7 +272,7 @@ public sealed class BulletinPageTests
     {
         await using var p = new PageHarness(path: "/bulletins/1");
         p.Show<BulletinPage>(ps => ps.Add(x => x.Number, 1));
-        await p.RunAsync(ScreenId.Bulletins, "x");
+        await p.RunAsync("x");
 
         Assert.Contains("BULLETIN #1: NOW", p.Plain, StringComparison.Ordinal);
         Assert.Contains("Hello world", p.Plain, StringComparison.Ordinal);
@@ -283,7 +300,7 @@ public sealed class BulletinPageTests
                 p.H.Presence.Set(1, 2);
             }
         };
-        await p.RunAsync(ScreenId.Bulletins, "x");
+        await p.RunAsync("x");
 
         Assert.Empty(p.H.Terminal.Animations);
         Assert.Equal(2, p.H.Terminal.SlotsStarted.Count);
@@ -313,14 +330,14 @@ public sealed class BulletinPageTests
         h.Http.With("content/bulletins.json", $$"""{ "bulletins": [ { "number": 3, "title": "Long", "lines": [{{lines}}] } ] }""");
         await using var p = new PageHarness(h, "/bulletins/3");
         p.Show<BulletinPage>(ps => ps.Add(x => x.Number, 3));
-        await p.RunAsync(ScreenId.Bulletins, DoorKeys.Enter, "n");
+        await p.RunAsync(DoorKeys.Enter, "n");
 
         Assert.Contains("-- more --", p.Plain, StringComparison.Ordinal);
         Assert.Contains("line 40", p.Plain, StringComparison.Ordinal);
         Assert.Contains("press any key", p.Plain, StringComparison.Ordinal);
         Assert.Empty(p.H.Navigator.Moves);
 
-        await p.RunAsync(ScreenId.Bulletins, "q");
+        await p.RunAsync("q");
         Assert.Equal([("/bulletins", false)], p.H.Navigator.Moves);
     }
 
@@ -331,7 +348,7 @@ public sealed class BulletinPageTests
     {
         await using var p = new PageHarness(path: "/bulletins/99");
         p.Show<BulletinPage>(ps => ps.Add(x => x.Number, 99));
-        await p.RunAsync(ScreenId.Bulletins, "x");
+        await p.RunAsync("x");
         Assert.Contains("FILE NOT FOUND ON THIS DRIVE", p.Plain, StringComparison.Ordinal);
         Assert.Equal([Transition.None], p.H.Terminal.Transitions);
         Assert.Equal([("/menu", false)], p.H.Navigator.Moves);
@@ -347,7 +364,7 @@ public sealed class BulletinPageTests
         await using var p = new PageHarness(h, "/bulletins/top");
         var cut = p.Show<TopPlayersPage>();
         cut.WaitForAssertion(() => Assert.Contains("SEEKERS", cut.Markup, StringComparison.Ordinal));
-        await p.RunAsync(ScreenId.Bulletins, "x");
+        await p.RunAsync("x");
 
         Assert.Contains("TOP PLAYERS", p.Plain, StringComparison.Ordinal);
         Assert.Contains("The Modem Oracle - SEEKERS", p.Plain, StringComparison.Ordinal);
@@ -414,7 +431,8 @@ public sealed class BoardPageTests
         await using var p = new PageHarness(path: "/board");
         var cut = p.Show<BoardPage>();
         cut.WaitForAssertion(() => Assert.Contains("The wall is blank", cut.Markup, StringComparison.Ordinal));
-        await p.RunAsync(ScreenId.MessageBoard, "z", "N", "r", "Q");
+        p.H.Navigator.OnNavigate = _ => p.H.Navigator.CurrentUri = new Uri("http://localhost/board");
+        await p.RunAsync("z", "N", "r", "Q");
 
         Assert.Contains("MESSAGE BOARDS", p.Plain, StringComparison.Ordinal);
         Assert.Contains("The wall is blank", p.Plain, StringComparison.Ordinal);
@@ -432,7 +450,7 @@ public sealed class BoardPageTests
         await using var p = new PageHarness(h, "/board");
         var cut = p.Show<BoardPage>();
         cut.WaitForAssertion(() => Assert.Contains("message 12", cut.Markup, StringComparison.Ordinal));
-        await p.RunAsync(ScreenId.MessageBoard, DoorKeys.Enter, DoorKeys.Enter);
+        await p.RunAsync(DoorKeys.Enter, DoorKeys.Enter);
         Assert.Contains("-- more --", p.Plain, StringComparison.Ordinal);
         Assert.Contains("message 12", p.Plain, StringComparison.Ordinal);
 
@@ -454,7 +472,7 @@ public sealed class FilePageTests
     {
         await using var p = new PageHarness(path: "/files");
         p.Show<FilesPage>();
-        await p.RunAsync(ScreenId.FileAreas, "Z", "a", "Q");
+        await p.RunAsync("Z", "a", "Q");
         Assert.Contains("FILE AREAS", p.Plain, StringComparison.Ordinal);
         Assert.Contains("(2 files)", p.Plain, StringComparison.Ordinal);
         Assert.Equal([("/files/tools", false), ("/menu", false)], p.H.Navigator.Moves);
@@ -480,7 +498,7 @@ public sealed class FilePageTests
     {
         await using var p = new PageHarness(path: "/files/tools");
         p.Show<FileAreaPage>(ps => ps.Add(x => x.Area, "TOOLS"));
-        await p.RunAsync(ScreenId.FileAreas, "5", "1", "x", "2", "x", DoorKeys.Escape);
+        await p.RunAsync("5", "1", "x", "2", "x", DoorKeys.Escape);
 
         Assert.Equal([new Uri("https://example.com/good")], p.H.Terminal.Opened);
         Assert.Contains("FILE AREA: TOOLS", p.Plain, StringComparison.Ordinal);
@@ -498,7 +516,7 @@ public sealed class FilePageTests
     {
         await using var p = new PageHarness(path: "/files/nope");
         p.Show<FileAreaPage>(ps => ps.Add(x => x.Area, "nope"));
-        await p.RunAsync(ScreenId.FileAreas, "x");
+        await p.RunAsync("x");
         Assert.Contains("FILE NOT FOUND ON THIS DRIVE", p.Plain, StringComparison.Ordinal);
     }
 
@@ -526,7 +544,7 @@ public sealed class DoorAndUserPageTests
         h.Loader.Door = new LambdaDoor(c => c.WriteAsync("INSIDE THE DOOR"));
         await using var p = new PageHarness(h, "/doors");
         p.Show<DoorsPage>();
-        await p.RunAsync(ScreenId.Doors, "2", "x", "1", "x", "7", "Q");
+        await p.RunAsync("2", "x", "1", "x", "7", "Q");
 
         Assert.Contains("DOOR GAMES", p.Plain, StringComparison.Ordinal);
         Assert.Contains("[LOCKED - LVL 10]", p.Plain, StringComparison.Ordinal);
@@ -551,7 +569,7 @@ public sealed class DoorAndUserPageTests
         await using var p = new PageHarness(h, "/users");
         var cut = p.Show<UsersPage>();
         cut.WaitForAssertion(() => Assert.Contains("Legend", cut.Markup, StringComparison.Ordinal));
-        await p.RunAsync(ScreenId.UserList, "x");
+        await p.RunAsync("x");
 
         Assert.Contains("Legend", p.Plain, StringComparison.Ordinal);
         Assert.Contains("LVL 99", p.Plain, StringComparison.Ordinal);
@@ -574,7 +592,7 @@ public sealed class DoorAndUserPageTests
         await using var p = new PageHarness(h, "/users");
         var cut = p.Show<UsersPage>();
         cut.WaitForAssertion(() => Assert.Contains("LINE NOISE", cut.Markup, StringComparison.Ordinal));
-        await p.RunAsync(ScreenId.UserList, "x");
+        await p.RunAsync("x");
         Assert.Contains("LINE NOISE", p.Plain, StringComparison.Ordinal);
         Assert.Contains("Nobody has signed the log yet", p.Plain, StringComparison.Ordinal);
     }
@@ -590,7 +608,7 @@ public sealed class PageModelTests
     public void PagesDeclareAccess()
     {
         var pages = typeof(BbsPage).Assembly.GetTypes().Where(t => t.IsSubclassOf(typeof(BbsPage)) && !t.IsAbstract).ToList();
-        Assert.Equal(19, pages.Count);
+        Assert.Equal(23, pages.Count);
         Assert.All(pages, page =>
         {
             var access = page.GetCustomAttributes(typeof(BbsAccessAttribute), inherit: false).Cast<BbsAccessAttribute>().Single();

@@ -114,6 +114,5 @@ public abstract class HandlePageBase : BbsPage
         }
     }
 
-    private async Task FinishSignInAsync() =>
-        Host.Leave(await new LoginScreen(Host.Context).AfterLoginAsync(Session, Host.PageToken));
+    private Task FinishSignInAsync() => Host.LogOnAsync();
 }

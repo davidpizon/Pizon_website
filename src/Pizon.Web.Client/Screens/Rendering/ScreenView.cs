@@ -1,5 +1,4 @@
 using System.Text;
-using Pizon.Doors.Sdk;
 using Pizon.Doors.Sdk.Text;
 using Pizon.Web.Client.Terminal;
 
@@ -99,71 +98,6 @@ public sealed class ScreenView(ScreenArt art)
     /// </summary>
     /// <returns>ANSI, or an empty string when the art has no cursor slot.</returns>
     public string CursorHome() => Art.CursorSlot is { } c ? Ansi.MoveTo(c.Row, c.Column) + Ansi.Fg(c.Foreground) + Ansi.Bg(c.Background) : string.Empty;
-
-    /// <summary>
-    /// Moves the cursor to the start of a slot in its colors (for typing into an <c>@?NAME@</c> slot).
-    /// </summary>
-    /// <param name="slot">A slot of this art.</param>
-    /// <param name="line">The 0-based line within the slot.</param>
-    /// <returns>ANSI.</returns>
-    public string MoveTo(FieldSlot slot, int line = 0)
-    {
-        Check(slot);
-        ArgumentOutOfRangeException.ThrowIfNegative(line);
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(line, slot.Height);
-        return Ansi.MoveTo(slot.Row + line, slot.Column) + Ansi.Fg(slot.Foreground) + Ansi.Bg(slot.Background);
-    }
-
-    /// <summary>
-    /// Shows lines in a slot a page at a time. While more pages follow, <paramref name="more"/> shows a
-    /// prompt; Enter or any other key turns the page and Q or Escape stops.
-    /// </summary>
-    /// <param name="terminal">The terminal.</param>
-    /// <param name="slot">The slot the lines go in.</param>
-    /// <param name="more">The slot for the "more" prompt.</param>
-    /// <param name="lines">The lines.</param>
-    /// <param name="cancellationToken">Cancels paging.</param>
-    /// <returns><see langword="true"/> when the last page was reached; <see langword="false"/> when the caller stopped early.</returns>
-    public async Task<bool> PageAsync(ITerminal terminal, FieldSlot slot, FieldSlot more, IReadOnlyList<string> lines, CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(terminal);
-        ArgumentNullException.ThrowIfNull(lines);
-        Check(more);
-        for (var start = 0; ; start += slot.Height)
-        {
-            SetLines(slot, lines.Skip(start));
-            var last = start + slot.Height >= lines.Count;
-            Set(more, last ? string.Empty : "|08-- more -- |[Enter]|14[Enter]|08 next page|]  |[Q]|14[Q]|08 stop|]");
-            await terminal.WriteAsync(RenderField(slot) + RenderField(more), cancellationToken);
-            if (last)
-            {
-                return true;
-            }
-
-            var key = await terminal.ReadKeyAsync(cancellationToken);
-            if (DoorKeys.Is(key, 'Q') || key == DoorKeys.Escape)
-            {
-                Set(more, string.Empty);
-                await terminal.WriteAsync(RenderField(more), cancellationToken);
-                return false;
-            }
-        }
-    }
-
-    /// <summary>
-    /// Binds a value to a slot and redraws just that slot.
-    /// </summary>
-    /// <param name="terminal">The terminal.</param>
-    /// <param name="slot">A slot of this art.</param>
-    /// <param name="pipeText">The value.</param>
-    /// <param name="cancellationToken">Cancels the write.</param>
-    /// <returns>A task that completes when written.</returns>
-    public Task UpdateAsync(ITerminal terminal, FieldSlot slot, string pipeText, CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(terminal);
-        Set(slot, pipeText);
-        return terminal.WriteAsync(RenderField(slot), cancellationToken);
-    }
 
     /// <summary>
     /// Shows the "press any key" prompt at the <c>@CURSOR@</c> slot and waits.

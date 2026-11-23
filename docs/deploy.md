@@ -69,10 +69,10 @@ converted to draft. Ready-for-review PRs are skipped. It analyzes only the files
 summary comment and uploads the full report as an artifact. To scan a whole branch, run the workflow by
 hand from the Actions tab.
 
-- It needs the `QODANA_TOKEN` repository secret: create a project in Qodana Cloud and save its project
-  token under Settings > Secrets and variables > Actions.
-- The analyzer runs on the runner itself (not in Qodana's container), with the .NET SDK from
-  `src/global.json`.
+- The `QODANA_TOKEN` repository secret is optional: with a Qodana Cloud project token saved under
+  Settings > Secrets and variables > Actions, results are also uploaded to Qodana Cloud.
+- The analyzer runs in Qodana's container (the community linter has no native mode). The `bootstrap`
+  step in `src/qodana.yaml` installs the .NET SDK from `src/global.json` there before the scan.
 - Settings (profile, solution, excluded folders) are in `src/qodana.yaml`. The build gate is still
   `src/coverage.ps1`; Qodana's findings are advisory.
 

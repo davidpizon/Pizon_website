@@ -1,0 +1,31 @@
+@page "/login"
+@using System.Globalization
+@layout BbsLayout
+@inherits BbsPage
+@attribute [BbsAccess(ScreenAccess.Public)]
+
+<PageTitle>@RouteTable.Tab("Log in")</PageTitle>
+@if (board is not null)
+{
+    <BbsScreen Art="WelcomeArt.Instance" Enter="Transition.Spray" OnDrawn="DrawnAsync">
+        <Field Slot="WelcomeArt.Tagline" Value="@board.Tagline" />
+        <Field Slot="WelcomeArt.Sysop" Value="@board.Sysop" />
+        <Field Slot="WelcomeArt.Node" Value="@Presence.NodeNumber.ToString(CultureInfo.InvariantCulture)" />
+        <Field Slot="WelcomeArt.Nodes" Value="@Presence.Online.ToString(CultureInfo.InvariantCulture)" />
+        <Field Slot="WelcomeArt.Date" Value="@Date(Host.Context.Time.GetLocalNow())" />
+        <Field Slot="WelcomeArt.Mood" Value="@board.Mood" />
+        <Field Slot="WelcomeArt.Location" Value="@board.Location" />
+        <Field Slot="WelcomeArt.Caller" Value="@PipeCodes.Escape(Session.Handle)" />
+        <Field Slot="WelcomeArt.Level" Value="@Session.Level.ToString(CultureInfo.InvariantCulture)" />
+        <Field Slot="WelcomeArt.Status" Value="@(error ?? string.Empty)" />
+        <Field Slot="WelcomeArt.Prompt" Value="@Prompt" />
+        <Field Slot="WelcomeArt.Options" Value="@Options(Session.Me, signedIn)" />
+        @if (!signedIn)
+        {
+            <Hotkey Key="D" When="@Session.Me.DiscordEnabled" OnPress="@(_ => Host.SignInAsync())" Label="Sign in with Discord" />
+            <Hotkey Key="V" When="@Session.Me.DevLoginEnabled" OnPress="@(_ => Host.SignInAsync(dev: true))" Label="Dev sign-in" />
+            <Hotkey Key="@DoorKeys.Enter" OnPress="GuestAsync" Label="Connect as GUEST" />
+            <Hotkey Key="G" OnPress="GuestAsync" />
+        }
+    </BbsScreen>
+}

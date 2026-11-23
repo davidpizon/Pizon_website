@@ -1,11 +1,35 @@
 # Plan: BBS screens as routable, compiled Razor-style pages bound to .DUR/.ANS art
 
-Status: **phase 1 (addresses on the existing screens) built on 2026-11-17.** On 2026-11-20 most of phases 2
-and 3 were built, plus part of 4: `TextLayout`, the `.dur` screen compiler (`Pizon.Screens.Generator`, diagnostics
-PZN001-PZN008), compiled art for every screen and `ScreenView`, which the existing `IScreen` classes now draw
-through. Still to do: `.ans` compilation, the Razor page components (`BbsScreen`, `Field`, `Hotkey`), forms,
-animated art and the clean-up phase. Two changes from the plan: hotspots are written `@[K] label@` (the
-label keeps its place) and 16-color Durdraw files are rejected (PZN002) for now.
+Status: **phases 1-4 built.** Phase 1 (addresses on the existing screens) was built on 2026-11-17. Most
+of phases 2 and 3 followed on 2026-11-20: `TextLayout`, the `.dur` screen compiler (`Pizon.Screens.Generator`,
+diagnostics PZN001-PZN008), compiled art for every screen and `ScreenView`. Phase 4 (the page model) was
+built on 2026-11-22: `BbsHost`, `BbsPage`, `[BbsAccess]`, the `BbsScreen`, `Field`, `List` and `Hotkey`
+components, and pages for the main menu, bulletins (list, `/bulletins/{n}`, `/bulletins/top`), the message
+board, file areas (`/files`, `/files/{area}`), doors and the user list. Still to do: `.ans` compilation,
+forms (phase 5), animated art (phase 6) and the clean-up (phase 7). Two earlier changes from the plan:
+hotspots are written `@[K] label@` (the label keeps its place), and 16-color Durdraw files are rejected
+(PZN002) for now.
+
+How phase 4 differs from the plan below:
+- **No separate `ScreenComposer`.** `ScreenView` from phase 3 already is the view engine, so `BbsScreen` uses it
+  directly.
+- **The legacy loop still drives.** `BbsApp` runs `PageScreen` for each page screen, and `PageScreen` hands
+  the terminal to `BbsHost`'s pump until the address moves to another screen or a hotkey leaves for one
+  (`Hotkey Screen="ScreenId.Logout"`). The pump only draws a page whose address belongs to the screen it is
+  running. Moving between pages of one screen (`/bulletins` to `/bulletins/2`) stays in the same pump. This
+  goes away in phase 7.
+- **`BbsHost` doesn't own the terminal or sign-in yet.** `BbsLayout` still creates the terminal and attaches
+  it, and `BbsApp` still checks who is calling on a deep link. Before each draw the host re-renders the
+  pages, so they show the call as it is now.
+- **`[BbsAccess]` is checked by `RouteTable.Guard`**, as in phase 1. The attribute must agree with the route
+  (a test checks).
+- **Routes.** `/board/{id}`, `/board/{id}/reply` and `/doors/{id}` aren't built. The message board's [N] and [R]
+  go to legacy compose screens at `/board/new` and `/board/reply`, which asks for the message number, until
+  forms land in phase 5.
+- **`List`** turns the page on any key that no hotkey takes, as the old paging did, and runs `OnLastPage` once
+  the last page shows. The bulletin #2 cam uses that to play until phase 6 moves it into a `<Slot>`.
+- **Imperative moments stay imperative.** Downloads and doors write to the terminal from a key handler, then
+  call `BbsScreen.Redraw()`.
 
 How phase 1 differs from the plan below:
 - **Layout.** The terminal moved into a new `Layout/BbsLayout` (nested in `MainLayout`), not into `MainLayout`

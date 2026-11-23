@@ -4,6 +4,7 @@ using Pizon.Web.Client.Api;
 using Pizon.Web.Client.Content;
 using Pizon.Web.Client.Doors;
 using Pizon.Web.Client.Screens;
+using Pizon.Web.Client.Screens.Hosting;
 using Pizon.Web.Client.Services;
 using Pizon.Web.Client.Terminal;
 
@@ -21,6 +22,10 @@ public sealed partial class BbsLayout : IAsyncDisposable
     private ElementReference mobileInput;
     private ElementReference ripCanvas;
     private JsTerminal? terminal;
+
+    /// <summary>Gets or sets the page host (it owns the call).</summary>
+    [Inject]
+    public required BbsHost Host { get; set; }
 
     /// <summary>Gets or sets the JS runtime.</summary>
     [Inject]
@@ -70,11 +75,13 @@ public sealed partial class BbsLayout : IAsyncDisposable
         }
 
         terminal = await JsTerminal.CreateAsync(Js, screen, mobileInput, ripCanvas);
-        var session = new BbsSession { Settings = await TerminalSettings.LoadAsync(terminal) };
+        var session = Host.Session;
+        session.Settings = await TerminalSettings.LoadAsync(terminal);
         await terminal.ApplySettingsAsync(session.Settings);
         var doors = new DoorHost(terminal, Api, Content, terminal, DoorLoader);
         var context = new ScreenContext(terminal, Api, Content, Presence, Navigator, terminal, doors, Time);
-        var app = new BbsApp(context);
+        Host.Attach(context);
+        var app = new BbsApp(context, Host);
         var start = BbsApp.StartScreen(Navigator.CurrentUri, session);
         _ = app.RunAsync(session, start, stop.Token);
     }

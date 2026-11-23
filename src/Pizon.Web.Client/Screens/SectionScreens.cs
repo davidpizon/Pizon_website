@@ -2,154 +2,11 @@ using System.Globalization;
 using Pizon.Doors.Sdk;
 using Pizon.Doors.Sdk.Text;
 using Pizon.Web.Client.Api;
-using Pizon.Web.Client.Content;
 using Pizon.Web.Client.Screens.Art;
 using Pizon.Web.Client.Screens.Rendering;
 using Pizon.Web.Client.Terminal;
 
 namespace Pizon.Web.Client.Screens;
-
-/// <summary>
-/// [4] Door Games: the door list from <c>doors.json</c>, with locks on doors that need sign-in.
-/// </summary>
-/// <param name="context">The shared screen context.</param>
-public sealed class DoorsScreen(ScreenContext context) : ScreenBase(context)
-{
-    /// <inheritdoc />
-    public override ScreenId Id => ScreenId.Doors;
-
-    /// <summary>
-    /// Builds the door list: two lines per door (title and tags, then the description).
-    /// </summary>
-    /// <param name="doors">The enabled doors.</param>
-    /// <param name="session">The call (for lock markers).</param>
-    /// <returns>ANSI text.</returns>
-    public static string Render(IReadOnlyList<DoorManifestEntry> doors, BbsSession session)
-    {
-        ArgumentNullException.ThrowIfNull(doors);
-        ArgumentNullException.ThrowIfNull(session);
-        var lines = new List<string>();
-        if (doors.Count == 0)
-        {
-            lines.Add("|08All doors are closed for repairs. The SysOp is holding a screwdriver.|07");
-        }
-
-        for (var i = 0; i < doors.Count && i < 9; i++)
-        {
-            var d = doors[i];
-            var locked = d.RequiresAuth && !session.IsMember;
-            var tag = locked ? " |09[LOCKED - LVL 10]|07" : d.Scored ? " |13[SCORED]|07" : string.Empty;
-            lines.Add(Ui.ItemPipe((i + 1).ToString(CultureInfo.InvariantCulture), $"|15{PipeCodes.Escape(d.Title)}") + tag);
-            lines.Add($"|08    {PipeCodes.Escape(d.Description)}|07");
-        }
-
-        return new ScreenView(DoorsArt.Instance).SetLines(DoorsArt.List, lines).Render();
-    }
-
-    /// <inheritdoc />
-    public override async Task<ScreenId> RunAsync(BbsSession session, CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(session);
-        var manifest = await Context.Content.GetDoorsAsync(cancellationToken);
-        var doors = manifest.EnabledDoors.ToList();
-        while (true)
-        {
-            await Term.TransitionAsync(Transition.Wipe, Render(doors, session), cancellationToken);
-            var key = await Term.ReadKeyAsync(cancellationToken);
-            if (DoorKeys.Is(key, 'Q') || key == DoorKeys.Escape)
-            {
-                return ScreenId.MainMenu;
-            }
-
-            if (int.TryParse(key, NumberStyles.None, CultureInfo.InvariantCulture, out var n) && n >= 1 && n <= doors.Count)
-            {
-                await Context.Doors.RunAsync(doors[n - 1], session, cancellationToken);
-            }
-        }
-    }
-}
-
-/// <summary>
-/// [5] User List and Hall of Fame: recent signed-in callers plus the SysOp's hand-picked legends.
-/// </summary>
-/// <param name="context">The shared screen context.</param>
-public sealed class UserListScreen(ScreenContext context) : ScreenBase(context)
-{
-    /// <inheritdoc />
-    public override ScreenId Id => ScreenId.UserList;
-
-    /// <summary>
-    /// Builds the hall of fame lines.
-    /// </summary>
-    /// <param name="fame">The hall of fame.</param>
-    /// <returns>Pipe-code lines.</returns>
-    public static IReadOnlyList<string> RenderFame(HallOfFame fame)
-    {
-        ArgumentNullException.ThrowIfNull(fame);
-        var lines = new List<string> { "|13  HALL OF FAME|08 - legends of the board|07", string.Empty };
-        foreach (var e in fame.Entries)
-        {
-            var handle = $"|15{PipeCodes.Escape(TextWrap.Fit(e.Handle, 16))}|07";
-            if (e.Url is not null)
-            {
-                handle = "|{" + e.Url.AbsoluteUri + "}" + handle + "|]";
-            }
-
-            lines.Add($"   {handle} |11{PipeCodes.Escape(TextWrap.Fit(e.Clearance, 9))}|07 {PipeCodes.Escape(TextWrap.Fit(e.Note, 48))}");
-        }
-
-        return lines;
-    }
-
-    /// <summary>
-    /// Builds the recent callers lines.
-    /// </summary>
-    /// <param name="callers">Recent callers.</param>
-    /// <returns>Pipe-code lines.</returns>
-    public static IReadOnlyList<string> RenderCallers(IReadOnlyList<CallerDto> callers)
-    {
-        ArgumentNullException.ThrowIfNull(callers);
-        var lines = new List<string> { "|13  LAST CALLERS|08 - signed-in callers only; guests leave no trace|07", string.Empty };
-        if (callers.Count == 0)
-        {
-            lines.Add("|08   Nobody has signed the log yet.|07");
-        }
-
-        lines.AddRange(callers.Select(c => string.Create(
-            CultureInfo.InvariantCulture,
-            $"   |15{PipeCodes.Escape(TextWrap.Fit(c.Handle, 16))}|07 |11LVL {c.Level,3}|07  |08last call {Ui.Stamp(c.LastSeen)}|07")));
-        return lines;
-    }
-
-    /// <summary>
-    /// Builds the credits lines, including the attribution the CC BY-SA terminal font requires.
-    /// </summary>
-    /// <returns>Pipe-code lines.</returns>
-    public static IReadOnlyList<string> RenderCredits() =>
-    [
-        "|13  CREDITS|07",
-        string.Empty,
-        "   |07Font: IBM VGA 8x16 from |15|{https://int10h.org/oldschool-pc-fonts/}The Ultimate Oldschool PC Font Pack|]|07 by VileR,",
-        "   |07licensed |{https://creativecommons.org/licenses/by-sa/4.0/}|11CC BY-SA 4.0|]|07.",
-    ];
-
-    /// <inheritdoc />
-    public override async Task<ScreenId> RunAsync(BbsSession session, CancellationToken cancellationToken)
-    {
-        var view = new ScreenView(UsersArt.Instance);
-        await Term.TransitionAsync(Transition.Wipe, view.Render(), cancellationToken);
-        var fame = await Context.Content.GetHallOfFameAsync(cancellationToken);
-        var callers = await Context.Api.GetRecentCallersAsync(cancellationToken);
-        var callerLines = RenderCallers(callers.Value ?? []).Concat(callers.IsOk ? [] : [Ui.FailureText(callers)]);
-        var lines = RenderFame(fame)
-            .Concat([string.Empty]).Concat(callerLines)
-            .Concat([string.Empty]).Concat(RenderCredits())
-            .ToList();
-        await view.PageAsync(Term, UsersArt.Body, UsersArt.More, lines, cancellationToken);
-        await view.PressAnyKeyAsync(Term, cancellationToken);
-        return ScreenId.MainMenu;
-    }
-}
 
 /// <summary>
 /// [P] Page SysOp: leaves a short message and buzzes the SysOp's phone. Signed-in callers only.
@@ -389,6 +246,6 @@ public sealed class RipCardScreen(ScreenContext context) : ScreenBase(context)
     {
         ArgumentNullException.ThrowIfNull(session);
         var key = await Term.ShowRipAsync(CardUrl, cancellationToken);
-        return key is null ? ScreenId.MainMenu : MainMenuScreen.Route(key, session) ?? ScreenId.MainMenu;
+        return key is null ? ScreenId.MainMenu : Pages.MainMenuPage.Route(key, session) ?? ScreenId.MainMenu;
     }
 }

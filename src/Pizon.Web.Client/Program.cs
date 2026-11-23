@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Components.WebAssembly.Services;
 using Pizon.Web.Client.Api;
 using Pizon.Web.Client.Content;
 using Pizon.Web.Client.Doors;
+using Pizon.Web.Client.Screens.Hosting;
 using Pizon.Web.Client.Services;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
@@ -14,6 +15,7 @@ builder.Services.AddScoped<IPresence, HubPresence>();
 builder.Services.AddScoped<IExternalNavigator, ExternalNavigator>();
 builder.Services.AddScoped<LazyAssemblyLoader>();
 builder.Services.AddScoped<IDoorLoader, LazyDoorLoader>();
+builder.Services.AddScoped<BbsHost>();
 builder.Services.AddSingleton(TimeProvider.System);
 
 await builder.Build().RunAsync();

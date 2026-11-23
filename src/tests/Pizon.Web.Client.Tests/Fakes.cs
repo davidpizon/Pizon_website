@@ -6,6 +6,7 @@ using Pizon.Web.Client.Api;
 using Pizon.Web.Client.Content;
 using Pizon.Web.Client.Doors;
 using Pizon.Web.Client.Screens;
+using Pizon.Web.Client.Screens.Hosting;
 using Pizon.Web.Client.Services;
 using Pizon.Web.Client.Terminal;
 
@@ -70,6 +71,9 @@ internal sealed class FakeTerminal : ITerminal, IBrowserStorage
     /// <summary>Gets everything written, as raw ANSI.</summary>
     public string Output => output.ToString();
 
+    /// <summary>Gets each write (not transitions), in order.</summary>
+    public List<string> Writes { get; } = [];
+
     /// <summary>Gets everything written, without escape sequences.</summary>
     public string Plain => PipeCodes.StripAnsi(Output);
 
@@ -107,6 +111,7 @@ internal sealed class FakeTerminal : ITerminal, IBrowserStorage
     /// <inheritdoc />
     public Task WriteAsync(string ansi, CancellationToken cancellationToken = default)
     {
+        Writes.Add(ansi);
         output.Append(ansi);
         return Task.CompletedTask;
     }
@@ -404,6 +409,9 @@ internal sealed class FakeNavigator : IExternalNavigator
     /// <summary>Gets the in-app address changes, in order.</summary>
     public List<(string Path, bool Replace)> Moves { get; } = [];
 
+    /// <summary>Gets or sets a callback run after each in-app address change.</summary>
+    public Action<string>? OnNavigate { get; set; }
+
     /// <inheritdoc />
     public void NavigateAway(string url) => Navigations.Add(url);
 
@@ -412,6 +420,7 @@ internal sealed class FakeNavigator : IExternalNavigator
     {
         Moves.Add((path, replace));
         Go(path);
+        OnNavigate?.Invoke(path);
     }
 
     /// <summary>
@@ -572,6 +581,8 @@ internal sealed class Harness
         Content = new ContentStore(Http.Client());
         Doors = new DoorHost(Terminal, Api, Content, Terminal, Loader);
         Context = new ScreenContext(Terminal, Api, Content, Presence, Navigator, Terminal, Doors, Time);
+        Host = new BbsHost(Navigator);
+        Host.Attach(Context);
     }
 
     /// <summary>Gets the terminal.</summary>
@@ -604,8 +615,17 @@ internal sealed class Harness
     /// <summary>Gets the screen context.</summary>
     public ScreenContext Context { get; }
 
-    /// <summary>Gets the call.</summary>
-    public BbsSession Session { get; } = new();
+    /// <summary>Gets the page host (attached to the fake terminal).</summary>
+    public BbsHost Host { get; }
+
+    /// <summary>Gets the call (the host's).</summary>
+    public BbsSession Session => Host.Session;
+
+    /// <summary>
+    /// Creates the BBS loop over this harness.
+    /// </summary>
+    /// <returns>The loop.</returns>
+    public BbsApp App() => new(Context, Host);
 
     /// <summary>
     /// Makes the caller a signed-in member (or the SysOp).

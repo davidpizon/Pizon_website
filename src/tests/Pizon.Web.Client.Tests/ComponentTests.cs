@@ -1,11 +1,13 @@
 using Bunit;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
+using Pizon.Doors.Sdk.Text;
 using Pizon.Web.Client.Api;
 using Pizon.Web.Client.Doors;
 using Pizon.Web.Client.Layout;
 using Pizon.Web.Client.Pages;
 using Pizon.Web.Client.Screens;
+using Pizon.Web.Client.Screens.Hosting;
 using Pizon.Web.Client.Services;
 using Pizon.Web.Client.Terminal;
 
@@ -205,6 +207,7 @@ public sealed class ComponentTests : IAsyncDisposable
         context.Services.AddSingleton<IExternalNavigator>(h.Navigator);
         context.Services.AddSingleton<IDoorLoader>(h.Loader);
         context.Services.AddSingleton<TimeProvider>(h.Time);
+        context.Services.AddSingleton(new BbsHost(h.Navigator));
     }
 
     /// <inheritdoc />
@@ -234,13 +237,26 @@ public sealed class ComponentTests : IAsyncDisposable
         Assert.Equal("PIZON BBS", Home.TitleFor("/nowhere"));
     }
 
-    /// <summary>Every routed screen is an <c>@page</c> on <see cref="Home"/>, and every <c>@page</c> is a routed screen.</summary>
+    /// <summary>
+    /// Every routed screen is served by an <c>@page</c>: on <see cref="Home"/> for legacy screens, or on a screen
+    /// page for the others (a page screen's own path is served by a page, never by <see cref="Home"/>); and every
+    /// <c>@page</c> belongs to a routed screen.
+    /// </summary>
     [Fact]
-    public void HomeServesEveryRoute()
+    public void EveryRouteIsServed()
     {
-        var pages = typeof(Home).GetCustomAttributes(typeof(RouteAttribute), inherit: false)
-            .Cast<RouteAttribute>().Select(r => r.Template).Order(StringComparer.Ordinal);
-        Assert.Equal(RouteTable.All.Select(r => r.Path).Order(StringComparer.Ordinal), pages);
+        static IEnumerable<string> Templates(Type t) =>
+            t.GetCustomAttributes(typeof(RouteAttribute), inherit: false).Cast<RouteAttribute>().Select(r => r.Template);
+        var home = Templates(typeof(Home)).ToList();
+        var pages = typeof(Home).Assembly.GetTypes()
+            .Where(t => t.Namespace == "Pizon.Web.Client.Screens.Pages")
+            .SelectMany(Templates)
+            .ToList();
+        Assert.Equal(
+            RouteTable.All.Select(r => r.Path).Order(StringComparer.Ordinal),
+            home.Concat(pages.Where(p => !p.Contains('{', StringComparison.Ordinal) && p.Count(c => c == '/') == 1)).Order(StringComparer.Ordinal));
+        Assert.All(RouteTable.All, r => Assert.Equal(BbsApp.PageScreens.Contains(r.Screen), pages.Contains(r.Path)));
+        Assert.All(pages, p => Assert.True(RouteTable.TryResolve(p.Replace("{Number:int}", "2", StringComparison.Ordinal), out _), p));
     }
 
     /// <summary>The router shows the home page inside the layout.</summary>
@@ -260,4 +276,89 @@ public sealed class ComponentTests : IAsyncDisposable
         Assert.Contains("BODY", layout.Markup, StringComparison.Ordinal);
         Assert.Contains("TRY DRIVE B:", context.Render<NotFound>().Markup.ToUpperInvariant(), StringComparison.Ordinal);
     }
+}
+
+/// <summary>
+/// End-to-end tests through the real router, <see cref="BbsLayout"/> and the JavaScript terminal bridge (bUnit's
+/// interop fake records what would be drawn): page screens and legacy screens hand the terminal to each other
+/// as the address moves.
+/// </summary>
+public sealed class RoutedPageTests : IAsyncDisposable
+{
+    private readonly BunitContext context = new();
+    private readonly BunitJSModuleInterop module;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="RoutedPageTests"/> class.
+    /// </summary>
+    public RoutedPageTests()
+    {
+        var h = new Harness();
+        context.JSInterop.Mode = JSRuntimeMode.Loose;
+        module = context.JSInterop.SetupModule(JsTerminal.ModulePath);
+        module.Mode = JSRuntimeMode.Loose;
+        context.Services.AddSingleton<IBbsApi>(h.Api);
+        context.Services.AddSingleton(h.Content);
+        context.Services.AddSingleton<IPresence>(h.Presence);
+        context.Services.AddSingleton<IDoorLoader>(h.Loader);
+        context.Services.AddSingleton<TimeProvider>(h.Time);
+        context.Services.AddSingleton<IExternalNavigator>(sp => new ExternalNavigator(sp.GetRequiredService<NavigationManager>()));
+        context.Services.AddSingleton(sp => new BbsHost(sp.GetRequiredService<IExternalNavigator>()));
+    }
+
+    /// <inheritdoc />
+    public ValueTask DisposeAsync() => context.DisposeAsync();
+
+    /// <summary>
+    /// A link straight to the menu draws it with no dial-up; hotkeys move the address and draw the next page;
+    /// a page under the same screen replaces the last one; Back redraws; an unknown bulletin is not found; and a
+    /// legacy screen (settings) takes the terminal and gives it back.
+    /// </summary>
+    [Fact]
+    public void FollowsTheAddress()
+    {
+        var nav = context.Services.GetRequiredService<NavigationManager>();
+        nav.NavigateTo("/menu");
+        context.Render<Routes>();
+        var host = context.Services.GetRequiredService<BbsHost>();
+        Until(() => Count("MAIN MENU") == 1);
+        Assert.DoesNotContain("Modem ready", Text(), StringComparison.Ordinal);
+        var terminal = (JsTerminal)host.Terminal;
+
+        terminal.OnKey("1");
+        Until(() => nav.Uri.EndsWith("/bulletins", StringComparison.Ordinal) && Count("SYSTEM BULLETINS") == 1);
+        terminal.OnKey("1");
+        Until(() => nav.Uri.EndsWith("/bulletins/1", StringComparison.Ordinal) && Count("BULLETIN #1: NOW") == 1);
+
+        nav.NavigateTo("/bulletins");
+        Until(() => Count("SYSTEM BULLETINS") == 2);
+        nav.NavigateTo("/bulletins/99");
+        Until(() => Count("FILE NOT FOUND ON THIS DRIVE") == 1);
+        terminal.OnKey("x");
+        Until(() => nav.Uri.EndsWith("/menu", StringComparison.Ordinal) && Count("MAIN MENU") == 2);
+
+        terminal.OnKey("S");
+        Until(() => nav.Uri.EndsWith("/settings", StringComparison.Ordinal) && Count("TERMINAL SETTINGS") == 1);
+        terminal.OnKey("Q");
+        Until(() => nav.Uri.EndsWith("/menu", StringComparison.Ordinal) && Count("MAIN MENU") == 3);
+    }
+
+    private static void Until(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (!condition())
+        {
+            Assert.True(DateTime.UtcNow < deadline, "Timed out waiting for the terminal.");
+            Thread.Sleep(10);
+        }
+    }
+
+    private string Text()
+    {
+        var writes = module.Invocations["write"].Select(i => (string?)i.Arguments[0]);
+        var transitions = module.Invocations["transition"].Select(i => (string?)i.Arguments[1]);
+        return PipeCodes.StripAnsi(string.Concat(writes.Concat(transitions)));
+    }
+
+    private int Count(string text) => Text().Split(text).Length - 1;
 }

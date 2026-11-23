@@ -1,12 +1,15 @@
 using System.Diagnostics.CodeAnalysis;
 using Pizon.Doors.Sdk.Text;
+using Pizon.Web.Client.Screens.Hosting;
 
 namespace Pizon.Web.Client.Screens;
 
 /// <summary>
 /// The BBS itself: picks the first screen from the page address, then runs screens one after another until
 /// the page leaves. It keeps the browser address in step with the screen (see <see cref="RouteTable"/>) and
-/// follows Back and Forward by stopping the current screen and opening the one the address names.
+/// follows Back and Forward by stopping the current screen and opening the one the address names. Screens
+/// that have become pages (<c>Screens/Pages</c>) run through <see cref="PageScreen"/>, which hands the terminal
+/// to <see cref="BbsHost"/> while the router shows the page.
 /// </summary>
 public sealed class BbsApp
 {
@@ -14,6 +17,7 @@ public sealed class BbsApp
     public const string LoginFailedMessage = "LOGIN FAILED - NO CARRIER ON THAT LINE";
 
     private readonly ScreenContext context;
+    private readonly BbsHost host;
     private ScreenId current = ScreenId.Exit;
     private ScreenId? requested;
     private CancellationTokenSource? screenStop;
@@ -22,11 +26,20 @@ public sealed class BbsApp
     /// Initializes a new instance of the <see cref="BbsApp"/> class.
     /// </summary>
     /// <param name="context">The shared screen context.</param>
-    public BbsApp(ScreenContext context)
+    /// <param name="host">The page host.</param>
+    public BbsApp(ScreenContext context, BbsHost host)
     {
         ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(host);
         this.context = context;
+        this.host = host;
     }
+
+    /// <summary>Gets the screens that are pages now, run through <see cref="PageScreen"/>.</summary>
+    public static IReadOnlySet<ScreenId> PageScreens { get; } = new HashSet<ScreenId>
+    {
+        ScreenId.MainMenu, ScreenId.Bulletins, ScreenId.MessageBoard, ScreenId.FileAreas, ScreenId.Doors, ScreenId.UserList,
+    };
 
     /// <summary>
     /// Works out where a call starts from the page address, and notes it on the session.
@@ -82,7 +95,7 @@ public sealed class BbsApp
     /// </summary>
     /// <param name="id">The screen id.</param>
     /// <returns>The screen, or <see langword="null"/> for <see cref="ScreenId.Exit"/>.</returns>
-    public IScreen? Create(ScreenId id) => id switch
+    public IScreen? Create(ScreenId id) => PageScreens.Contains(id) ? new PageScreen(context, host, id) : id switch
     {
         ScreenId.Connect => new ConnectScreen(context),
         ScreenId.Handshake => new HandshakeScreen(context),
@@ -92,12 +105,8 @@ public sealed class BbsApp
         ScreenId.NewUserHandle => new HandleScreen(context, isNewUser: true),
         ScreenId.ChangeHandle => new HandleScreen(context, isNewUser: false),
         ScreenId.RipCard => new RipCardScreen(context),
-        ScreenId.MainMenu => new MainMenuScreen(context),
-        ScreenId.Bulletins => new BulletinsScreen(context),
-        ScreenId.MessageBoard => new MessageBoardScreen(context),
-        ScreenId.FileAreas => new FileAreasScreen(context),
-        ScreenId.Doors => new DoorsScreen(context),
-        ScreenId.UserList => new UserListScreen(context),
+        ScreenId.BoardNew => new BoardComposeScreen(context, reply: false),
+        ScreenId.BoardReply => new BoardComposeScreen(context, reply: true),
         ScreenId.PageSysop => new PageSysopScreen(context),
         ScreenId.Settings => new SettingsScreen(context),
         ScreenId.Goodbye => new GoodbyeScreen(context),
@@ -238,13 +247,14 @@ public sealed class BbsApp
     }
 
     /// <summary>
-    /// Puts the screen's address in the address bar (screens without a route keep the current one).
+    /// Puts the screen's address in the address bar (screens without a route keep the current one, and an
+    /// address under a nested route, such as <c>/bulletins/2</c>, already belongs to its screen).
     /// Moving on from an entrance screen replaces the history entry.
     /// </summary>
     private void SyncAddress(ScreenId from, ScreenId to)
     {
         if (RouteTable.For(to) is not { } route ||
-            string.Equals(RouteTable.Normalize(context.Navigator.CurrentUri.AbsolutePath), route.Path, StringComparison.OrdinalIgnoreCase))
+            (RouteTable.TryResolve(context.Navigator.CurrentUri.AbsolutePath, out var here) && here.Screen == to))
         {
             return;
         }

@@ -3,6 +3,7 @@ using Pizon.Doors.Sdk.Text;
 using Pizon.Web.Client.Api;
 using Pizon.Web.Client.Content;
 using Pizon.Web.Client.Screens;
+using Pizon.Web.Client.Screens.Pages;
 using Pizon.Web.Client.Terminal;
 
 namespace Pizon.Web.Client.Tests;
@@ -274,9 +275,9 @@ public sealed class LoginScreenTests
 }
 
 /// <summary>
-/// Tests for the main menu.
+/// Tests for the main menu's key routing (also used by the RIP card).
 /// </summary>
-public sealed class MainMenuScreenTests
+public sealed class MainMenuRouteTests
 {
     /// <summary>Menu keys route to their screens, regardless of case.</summary>
     /// <param name="key">The key.</param>
@@ -292,7 +293,7 @@ public sealed class MainMenuScreenTests
     [InlineData("s", ScreenId.Settings)]
     [InlineData("R", ScreenId.RipCard)]
     [InlineData("g", ScreenId.Goodbye)]
-    public void RoutesKeys(string key, ScreenId expected) => Assert.Equal(expected, MainMenuScreen.Route(key, new BbsSession()));
+    public void RoutesKeys(string key, ScreenId expected) => Assert.Equal(expected, MainMenuPage.Route(key, new BbsSession()));
 
     /// <summary>D, L and * depend on who is calling; other keys do nothing.</summary>
     [Fact]
@@ -302,57 +303,15 @@ public sealed class MainMenuScreenTests
         var member = new Harness().Member().Session;
         var sysop = new Harness().Member(sysop: true).Session;
 
-        Assert.Equal(ScreenId.SignIn, MainMenuScreen.Route("D", guest));
-        Assert.Null(MainMenuScreen.Route("D", member));
-        Assert.Null(MainMenuScreen.Route("D", new BbsSession()));
-        Assert.Null(MainMenuScreen.Route("L", guest));
-        Assert.Equal(ScreenId.Logout, MainMenuScreen.Route("L", member));
-        Assert.Null(MainMenuScreen.Route("*", member));
-        Assert.Equal(ScreenId.SysopConsole, MainMenuScreen.Route("*", sysop));
-        Assert.Null(MainMenuScreen.Route("z", member));
-        Assert.Null(MainMenuScreen.Route(DoorKeys.Enter, member));
-    }
-
-    /// <summary>The menu shows the options this caller can use.</summary>
-    [Fact]
-    public void RendersPerCaller()
-    {
-        var guest = Ui.P(MainMenuScreen.Render(new BbsSession()));
-        Assert.Contains("Sign in with Discord", guest, StringComparison.Ordinal);
-        Assert.DoesNotContain("Log out", guest, StringComparison.Ordinal);
-
-        var sysop = MainMenuScreen.Render(new Harness().Member(sysop: true).Session);
-        Assert.Contains("Change Handle", sysop, StringComparison.Ordinal);
-        Assert.Contains("Log out of Discord", sysop, StringComparison.Ordinal);
-        Assert.Contains("SysOp Console", sysop, StringComparison.Ordinal);
-    }
-
-    /// <summary>The menu draws, keeps the online line live, hints on ESC and leaves on a menu key.</summary>
-    /// <returns>A task that completes when the test is done.</returns>
-    [Fact]
-    public async Task RunsTheMenu()
-    {
-        var h = new Harness();
-        h.Presence.Set(1, 2);
-        h.Terminal.OnRead = k =>
-        {
-            if (k == "z")
-            {
-                h.Presence.Set(1, 2, 3);
-            }
-        };
-        h.Terminal.Keys(DoorKeys.Escape, "z", "1");
-        var screen = new MainMenuScreen(h.Context);
-        Assert.Equal(ScreenId.Bulletins, await screen.RunAsync(h.Session, CancellationToken.None));
-
-        Assert.Equal(ScreenId.MainMenu, screen.Id);
-        Assert.Equal([Transition.Draw, Transition.Undraw], h.Terminal.Transitions);
-        Assert.Contains("2 callers online", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("3 callers online · nodes busy: 1,2,3", h.Terminal.Plain, StringComparison.Ordinal);
-        Assert.Contains("To log off, press G", h.Terminal.Plain, StringComparison.Ordinal);
-
-        h.Presence.Set(1);
-        Assert.DoesNotContain("1 callers online", h.Terminal.Plain, StringComparison.Ordinal);
+        Assert.Equal(ScreenId.SignIn, MainMenuPage.Route("D", guest));
+        Assert.Null(MainMenuPage.Route("D", member));
+        Assert.Null(MainMenuPage.Route("D", new BbsSession()));
+        Assert.Null(MainMenuPage.Route("L", guest));
+        Assert.Equal(ScreenId.Logout, MainMenuPage.Route("L", member));
+        Assert.Null(MainMenuPage.Route("*", member));
+        Assert.Equal(ScreenId.SysopConsole, MainMenuPage.Route("*", sysop));
+        Assert.Null(MainMenuPage.Route("z", member));
+        Assert.Null(MainMenuPage.Route(DoorKeys.Enter, member));
     }
 }
 

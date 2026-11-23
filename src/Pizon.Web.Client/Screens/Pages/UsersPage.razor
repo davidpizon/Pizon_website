@@ -1,0 +1,14 @@
+@page "/users"
+@layout BbsLayout
+@inherits BbsPage
+@attribute [BbsAccess(ScreenAccess.Public)]
+
+<PageTitle>@RouteTable.Tab("User list & hall of fame")</PageTitle>
+<BbsScreen Art="UsersArt.Instance" Prompt="@prompt" OnKey="OnKey">
+    @if (lines is not null)
+    {
+        <List Slot="UsersArt.Body" Items="lines" More="UsersArt.More" OnLastPage="@(() => prompt = Ui.AnyKey)" />
+    }
+    <Hotkey Key="Q" Href="/menu" Label="Back to the main menu" />
+    <Hotkey Key="@DoorKeys.Escape" Href="/menu" />
+</BbsScreen>

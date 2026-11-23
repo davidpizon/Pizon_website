@@ -32,6 +32,12 @@ public enum ScreenId
     /// <summary>[2] Message Boards.</summary>
     MessageBoard,
 
+    /// <summary>[N] on the message board: write a new message.</summary>
+    BoardNew,
+
+    /// <summary>[R] on the message board: reply to a message.</summary>
+    BoardReply,
+
     /// <summary>[3] File Areas.</summary>
     FileAreas,
 

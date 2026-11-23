@@ -9,7 +9,7 @@ import { JS, FakeDocument, FakeElement, FakeAudioContext, FrameClock, recorder, 
 
 const { DomRenderer, toRuns } = await import(new URL("dom-renderer.js", JS));
 const { InputController, mapKey, SKIP_DISTANCE } = await import(new URL("input.js", JS));
-const { ModemAudio } = await import(new URL("audio.js", JS));
+const { ModemAudio, handshakePlan } = await import(new URL("audio.js", JS));
 const { CellBuffer, blankCell } = await import(new URL("cell-buffer.js", JS));
 const { mulberry32 } = await import(new URL("transitions.js", JS));
 const terminal = await import(new URL("index.js", JS));
@@ -156,7 +156,7 @@ test("keys map to BBS keys and hotspot clicks, skips and phone input reach the s
   bare.dispose();
 });
 
-test("modem audio waits for a gesture, plays tones and fades out", () => {
+test("modem audio waits for a gesture, plays the rendered handshake and fades out", () => {
   const silent = new ModemAudio(undefined, mulberry32(1));
   silent.unlock();
   assert.equal(silent.playHandshake(), 0);
@@ -169,7 +169,12 @@ test("modem audio waits for a gesture, plays tones and fades out", () => {
   audio.unlock();
   audio.unlock();
   assert.equal(audio.ctx.resumed, 1);
-  assert.ok(audio.playHandshake() > 5);
+  const seconds = audio.playHandshake();
+  const last = handshakePlan().at(-1);
+  assert.ok(Math.abs(seconds - (last.at + last.dur)) < 1e-3);
+  const source = audio.source;
+  assert.deepEqual(source.start.calls, [[10]]);
+  assert.ok(source.buffer.getChannelData(0).some((x) => Math.abs(x) > 0.1));
   const master = audio.master;
   audio.beep();
   const oscillators = audio.ctx.nodes.filter((n) => n.frequency);
@@ -177,7 +182,15 @@ test("modem audio waits for a gesture, plays tones and fades out", () => {
   assert.ok(oscillators.every((o) => o.start.calls.length === 1 && o.stop.calls.length === 1));
   audio.stop(100);
   assert.deepEqual(master.gain.linearRampToValueAtTime.calls, [[0, 10.1]]);
+  assert.deepEqual(source.stop.calls, [[10.1]]);
   assert.equal(audio.master, null);
+  assert.equal(audio.source, null);
+
+  audio.playHandshake();
+  assert.equal(audio.ctx.buffers, 1, "the handshake is rendered once and reused");
+  audio.stop();
+  audio.beep();
+  audio.stop();
 });
 
 test("the terminal paints writes at the baud rate and passes keys on", async () => {

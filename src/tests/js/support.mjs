@@ -287,6 +287,27 @@ export class FakeAudioContext {
   }
 
   /**
+   * Creates an audio buffer.
+   * @param {number} channels Channel count.
+   * @param {number} length Samples per channel.
+   * @param {number} rate Sample rate.
+   * @returns {{length: number, duration: number, getChannelData: (c: number) => Float32Array}} The buffer.
+   */
+  createBuffer(channels, length, rate) {
+    const data = Array.from({ length: channels }, () => new Float32Array(length));
+    this.buffers = (this.buffers ?? 0) + 1;
+    return { length, duration: length / rate, getChannelData: (c) => data[c] };
+  }
+
+  /**
+   * Creates a buffer source node.
+   * @returns {object} The node.
+   */
+  createBufferSource() {
+    return this.node({ buffer: null, start: recorder("start"), stop: recorder("stop") });
+  }
+
+  /**
    * Records and returns a node with a connect method.
    * @param {object} node The node fields.
    * @returns {object} The node.

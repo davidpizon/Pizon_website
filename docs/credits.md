@@ -31,7 +31,9 @@ The terminal uses **IBM VGA 8x16** from VileR's *The Ultimate Oldschool PC Font 
   the screen compiler's color numbering follows Durdraw's `color_256_to_ansi_16` table
   (Durdraw © Sam Foster, BSD 3-Clause). No Durdraw code is included.
 - The Modem Oracle and its fortunes are original.
-- Modem sounds are synthesized in the browser (Web Audio); no recordings are used.
+- Modem sounds are synthesized in the browser (Web Audio); no recordings are used. The handshake
+  follows the published V.25, V.8, V.21 and V.32 signals (answer tone, FSK negotiation, AA/AC tones,
+  training); the bits and symbols are random.
 - Animations converted from GIFs must be ones the SysOp owns or is licensed to use; credit them here.
 
 ## Software

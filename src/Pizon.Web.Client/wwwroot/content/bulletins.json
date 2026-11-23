@@ -33,7 +33,7 @@
       "number": 2,
       "title": "About the SysOp",
       "updated": "",
-      "animation": "content/anim/sysopcam.json",
+      "cam": true,
       "lines": [
         "|11SysOp:|15 David Pizon|07",
         "",

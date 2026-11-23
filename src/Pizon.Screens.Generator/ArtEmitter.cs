@@ -48,11 +48,13 @@ internal static class ArtEmitter
     /// Writes the class.
     /// </summary>
     /// <param name="fileName">The art's file name (for the docs and the art's name).</param>
-    /// <param name="grid">The art, with placeholders already blanked.</param>
+    /// <param name="movie">The art's frames; the first has its placeholders already blanked.</param>
     /// <param name="scan">The slots and hotspots.</param>
+    /// <param name="ranges">The named frame ranges from the sidecar (animated art only).</param>
     /// <returns>The C# source.</returns>
-    public static string Emit(string fileName, ArtGrid grid, ScanResult scan)
+    public static string Emit(string fileName, ArtMovie movie, ScanResult scan, List<KeyValuePair<string, (int First, int Last)>> ranges)
     {
+        var grid = movie.Frames[0];
         var className = ClassName(fileName);
         var stem = Path.GetFileNameWithoutExtension(fileName);
         var sb = new StringBuilder();
@@ -67,23 +69,48 @@ internal static class ArtEmitter
         sb.AppendLine("[global::System.CodeDom.Compiler.GeneratedCode(\"Pizon.Screens.Generator\", \"1.0.0\")]");
         sb.Append("internal sealed class ").Append(className).Append(" : ").Append(Rendering).AppendLine(".ScreenArt");
         sb.AppendLine("{");
-        sb.AppendLine("    private const string CellText =");
-        for (var row = 0; row < grid.Rows; row++)
-        {
-            sb.Append("        ").Append(Literal(new string(grid.Chars, row * grid.Columns, grid.Columns)))
-                .AppendLine(row == grid.Rows - 1 ? ";" : " +");
-        }
-
+        CellConstant(sb, "CellText", grid);
         sb.AppendLine();
         sb.Append("    private static readonly byte[] ForegroundColors = ").Append(Bytes(grid.Foreground)).AppendLine(";");
         sb.AppendLine();
         sb.Append("    private static readonly byte[] BackgroundColors = ").Append(Bytes(grid.Background)).AppendLine(";");
         sb.AppendLine();
+        if (movie.Animated)
+        {
+            for (var i = 1; i < movie.Frames.Count; i++)
+            {
+                CellConstant(sb, "Frame" + Invariant(i + 1) + "Text", movie.Frames[i]);
+                sb.AppendLine();
+            }
+
+            sb.AppendLine("    private static readonly " + Rendering + ".ArtFrame[] FrameData =");
+            sb.AppendLine("    [");
+            sb.Append("        new(CellText, ForegroundColors, BackgroundColors, ").Append(Invariant(movie.Delays[0])).AppendLine("),");
+            for (var i = 1; i < movie.Frames.Count; i++)
+            {
+                sb.Append("        new(Frame").Append(Invariant(i + 1)).Append("Text, ").Append(Bytes(movie.Frames[i].Foreground)).Append(", ")
+                    .Append(Bytes(movie.Frames[i].Background)).Append(", ").Append(Invariant(movie.Delays[i])).AppendLine("),");
+            }
+
+            sb.AppendLine("    ];");
+            sb.AppendLine();
+        }
+
         sb.Append("    private ").Append(className).AppendLine("()");
         sb.Append("        : base(").Append(Literal(stem)).Append(", ").Append(Invariant(grid.Columns)).Append(", ")
             .Append(Invariant(grid.Rows)).AppendLine(", CellText, ForegroundColors, BackgroundColors,");
         sb.Append("            [").Append(string.Join(", ", scan.Slots.Select(s => SlotProperty(s)))).AppendLine("],");
-        sb.Append("            [").Append(string.Join(", ", scan.Hotspots.Select(Hotspot))).AppendLine("])");
+        sb.Append("            [").Append(string.Join(", ", scan.Hotspots.Select(Hotspot))).Append(']');
+        if (movie.Animated)
+        {
+            sb.AppendLine(",");
+            sb.Append("            new ").Append(Rendering).Append(".ArtAnimation(FrameData, new global::System.Collections.Generic.Dictionary<string, ")
+                .Append(Rendering).Append(".FrameRange> { ")
+                .Append(string.Join(", ", ranges.Select(r => "[" + Literal(r.Key) + "] = new(" + Invariant(r.Value.First) + ", " + Invariant(r.Value.Last) + ")")))
+                .Append(ranges.Count > 0 ? " " : string.Empty).Append("})");
+        }
+
+        sb.AppendLine(")");
         sb.AppendLine("    {");
         sb.AppendLine("    }");
         foreach (var slot in scan.Slots)
@@ -100,11 +127,36 @@ internal static class ArtEmitter
                 .Append("global::Pizon.Doors.Sdk.Text.TextAlign.").Append(slot.Align).AppendLine(");");
         }
 
+        if (ranges.Count > 0)
+        {
+            sb.AppendLine();
+            sb.Append("    /// <summary>The named frame ranges of <c>").Append(Xml(stem)).AppendLine(".anim.json</c>, for <c>&lt;Slot Range=\"...\"&gt;</c>.</summary>");
+            sb.AppendLine("    public static class Ranges");
+            sb.AppendLine("    {");
+            foreach (var range in ranges)
+            {
+                sb.Append("        /// <summary>Frames ").Append(Invariant(range.Value.First)).Append(" to ").Append(Invariant(range.Value.Last)).AppendLine(" (counting from 0).</summary>");
+                sb.Append("        public const string ").Append(SlotScanner.RangeName(range.Key)).Append(" = ").Append(Literal(range.Key)).AppendLine(";");
+            }
+
+            sb.AppendLine("    }");
+        }
+
         sb.AppendLine();
         sb.AppendLine("    /// <summary>Gets the one instance of this art. It is declared last so the slots above exist first.</summary>");
         sb.Append("    public static ").Append(className).AppendLine(" Instance { get; } = new();");
         sb.AppendLine("}");
         return sb.ToString();
+    }
+
+    private static void CellConstant(StringBuilder sb, string name, ArtGrid grid)
+    {
+        sb.Append("    private const string ").Append(name).AppendLine(" =");
+        for (var row = 0; row < grid.Rows; row++)
+        {
+            sb.Append("        ").Append(Literal(new string(grid.Chars, row * grid.Columns, grid.Columns)))
+                .AppendLine(row == grid.Rows - 1 ? ";" : " +");
+        }
     }
 
     private static string SlotProperty(ArtSlot slot) => SlotScanner.PropertyName(slot.Name);

@@ -29,6 +29,15 @@ internal sealed class FakeTerminal : ITerminal, IBrowserStorage
     /// <summary>Gets the animations played, in order.</summary>
     public List<(string Url, AnimationOptions Options)> Animations { get; } = [];
 
+    /// <summary>Gets every slot animation started, in order.</summary>
+    public List<(string Name, SlotAnimation Animation)> SlotsStarted { get; } = [];
+
+    /// <summary>Gets every slot stopped, in order.</summary>
+    public List<string> SlotsStopped { get; } = [];
+
+    /// <summary>Gets the slots playing now (a clear-screen write stops them all, as in the browser).</summary>
+    public Dictionary<string, SlotAnimation> Playing { get; } = [];
+
     /// <summary>Gets the URLs opened in a new tab.</summary>
     public List<Uri> Opened { get; } = [];
 
@@ -119,6 +128,7 @@ internal sealed class FakeTerminal : ITerminal, IBrowserStorage
     {
         Writes.Add(ansi);
         output.Append(ansi);
+        StopSlotsOnClear(ansi);
         return Task.CompletedTask;
     }
 
@@ -127,7 +137,16 @@ internal sealed class FakeTerminal : ITerminal, IBrowserStorage
     {
         Transitions.Add(effect);
         output.Append(ansi);
+        StopSlotsOnClear(ansi);
         return Task.CompletedTask;
+    }
+
+    private void StopSlotsOnClear(string ansi)
+    {
+        if (ansi.Contains(Ansi.ClearScreen, StringComparison.Ordinal))
+        {
+            Playing.Clear();
+        }
     }
 
     /// <inheritdoc />
@@ -225,6 +244,22 @@ internal sealed class FakeTerminal : ITerminal, IBrowserStorage
     public Task BeepAsync()
     {
         Beeps++;
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public Task StartSlotAsync(string name, SlotAnimation animation)
+    {
+        SlotsStarted.Add((name, animation));
+        Playing[name] = animation;
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public Task StopSlotAsync(string name)
+    {
+        SlotsStopped.Add(name);
+        Playing.Remove(name);
         return Task.CompletedTask;
     }
 
@@ -572,7 +607,7 @@ internal sealed class Harness
             { "sysop": "David Pizon", "mood": "Calm", "location": "Grid", "tagline": "Tag",
               "bulletins": [
                 { "number": 1, "title": "Now", "updated": "today", "lines": ["|14Hello|07 world", "a very long line that goes on and on and on and on and on and on and on and on and on and on"] },
-                { "number": 2, "title": "About", "animation": "content/anim/sysopcam.json", "lines": ["Bio"] } ] }
+                { "number": 2, "title": "About", "cam": true, "lines": ["Bio"] } ] }
             """);
         Http.With("content/files.json", """
             { "areas": [ { "name": "TOOLS", "description": "Tools", "files": [

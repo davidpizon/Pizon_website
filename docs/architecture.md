@@ -27,6 +27,8 @@ screens. Screens come in two kinds while [plans/screen-pages.md](plans/screen-pa
   - `<Hotkey Key="…" Href="…">` goes to an address, or `Screen="…"` leaves for a screen with no address;
   - `<BbsForm Model="…" StatusSlot="…" OnValidSubmit="…" OnCancel="…">` validates its model with
     DataAnnotations (an `EditContext`) and shows the first error in the status slot;
+  - `<Slot Art="…" At="…" Range="…">` plays animated art in an `@ANIM:NAME@` slot, behind the page (the
+    SysOp cam on bulletin #2);
   - `<InputField Slot="…" @bind-Value="…">` types into a one-line input slot (`@?NAME@` in the art), and
     `<BlockEditor>` into a taller one, word-wrapping as you type. Both edit a `Screens/Rendering/TextBox`,
     which sends only the cells that changed. Enter moves to the form's next input and submits from the
@@ -94,11 +96,12 @@ Each screen has its own address, so it can be bookmarked and shared, and Back an
 | `pacing.js` | Baud-rate pacing (instant, 2400, 9600). |
 | `transitions.js` | Cell-based effects: wipe, dissolve, scroll-off, draw/undraw (menu), spray (graffiti banner). |
 | `ansimation.js` | Animation files: `{fps, loop, frames}` JSON or ANSI "movies" split on clear-screen. |
+| `compositor.js` | Animation slots: compiled art playing in a box of the screen beside the queue, stamped into its own cells each frame. Keys pass through to the page; clearing the screen stops every slot. |
 | `rip.js` | A RIPscrip subset drawn on a 640×350 canvas, with clickable buttons. |
 | `cp437.js` | Decodes `.ans` files (UTF-8, or CP437 with the SAUCE record stripped). |
 | `input.js` | Keys, hotspot clicks, "move the mouse to skip" and the hidden input for phone keyboards. |
 | `audio.js` | Synthesized dial tone, DTMF, handshake and beep (Web Audio, opt-in). |
-| `index.js` | The `Terminal` class (a queue of writes, transitions and animations on `requestAnimationFrame`) and the interop functions .NET calls. |
+| `index.js` | The `Terminal` class (a queue of writes, transitions and animations on `requestAnimationFrame`, with the slots ticking alongside) and the interop functions .NET calls. |
 
 `prefers-reduced-motion` turns off pacing, transitions and animations (first frame only).
 

@@ -4,7 +4,9 @@
  * rows of pipe-code text with the placeholders (@NAME...@, @?NAME@, @^...@, @[K] label@, @ANIM:NAME@)
  * typed in literally; the rows are painted with the real terminal emulator, so the art matches what the
  * browser draws. The files are ordinary Durdraw v8 movies (256 colors, one frame): open them in Durdraw to
- * restyle a screen, keeping the placeholders' size and position. See docs/content.md.
+ * restyle a screen, keeping the placeholders' size and position. Animated art (several frames, no
+ * placeholders, played in a <Slot> of a screen) is written the same way, with a <name>.anim.json sidecar
+ * naming its frame ranges. See docs/content.md.
  * Usage: node src/tools/make-screen-art.mjs
  * @module make-screen-art
  */
@@ -374,19 +376,55 @@ function screens() {
 }
 
 /**
+ * The animated art, by file name: each frame is rows of pipe-code text, plus the named frame ranges
+ * written to the .anim.json sidecar.
+ * TODO-SYSOP: the SysOp cam is a stand-in drawing; draw the real cam in Durdraw and save it over sysop-cam.dur
+ * (keep it 24 x 12, and keep or rename the ranges in sysop-cam.anim.json).
+ * @returns {Record<string, {cols: number, rows: number, frames: string[][], ranges: Record<string, number[]>}>} The animations.
+ */
+function animations() {
+  const cols = 24;
+  const rows = 12;
+  const frame = (label, blink, eyes, hands, noise) => {
+    const inner = [
+      `|09${blink ? "\u25cf" : " "} ${label}|08${" ".repeat(9 - label.length)}|11SYSOP CAM `,
+      "",
+      "|07       .---.        ",
+      `|07      ( ${eyes} )       `,
+      "|07       \\ - /        ",
+      "|07     ___|_|___      ",
+      `|07    |  [${hands}]  |     `,
+      "|07    '---------'     ",
+      "",
+      "",
+    ].map((line, i) => (i + 1 === noise ? "|08" + "\u2591\u2592\u2591\u2591\u2592\u2591\u2591\u2591\u2592\u2591\u2591\u2592\u2591\u2591\u2591\u2592\u2591\u2591\u2592\u2591\u2591\u2591" : line));
+    return [
+      `|08\u250c${"\u2500".repeat(cols - 2)}\u2510`,
+      ...inner.map((line) => `|08\u2502${pad(line, cols - 2)}|08\u2502`),
+      `|08\u2514${"\u2500".repeat(cols - 2)}\u2518`,
+    ];
+  };
+  const idle = Array.from({ length: 8 }, (_, i) => frame("REC", i < 4, i === 6 ? "- -" : "o o", "===", 2 + i));
+  const busy = Array.from({ length: 8 }, (_, i) => frame("LIVE", i % 2 === 0, i % 4 < 2 ? "o o" : "O O", i % 2 === 0 ? "=#=" : "#=#", 2 + i));
+  return { "sysop-cam": { cols, rows, frames: [...idle, ...busy], ranges: { idle: [0, 7], busy: [8, 15] } } };
+}
+
+/**
  * Paints a screen's rows (over optional ANSI art) with the terminal emulator.
- * @param {string[]} rows 25 rows of pipe-code text.
+ * @param {string[]} rows 25 rows of pipe-code text (or the art's own height).
  * @param {string} [under] ANSI drawn first (the welcome banner).
+ * @param {number} [cols=80] The art's width.
+ * @param {number} [height=25] The art's height.
  * @returns {CellBuffer} The painted cells.
  */
-function paint(rows, under) {
-  const buffer = new CellBuffer(COLS, ROWS);
+function paint(rows, under, cols = COLS, height = ROWS) {
+  const buffer = new CellBuffer(cols, height);
   const parser = new AnsiParser((t) => buffer.apply(t));
   if (under) {
     parser.feed(under);
   }
   rows.forEach((row, i) => {
-    if (visible(row) > COLS) {
+    if (visible(row) > cols) {
       throw new Error(`row ${i + 1} is ${visible(row)} cells wide: ${row}`);
     }
     if (row) {
@@ -397,19 +435,22 @@ function paint(rows, under) {
 }
 
 /**
- * Builds a one-frame Durdraw v8 movie (256 colors) from painted cells.
+ * Builds a Durdraw v8 movie (256 colors) from painted frames, each shown for one frame at 8 per second.
  * @param {string} name The movie's name.
- * @param {CellBuffer} buffer The cells.
+ * @param {CellBuffer[]} buffers The frames' cells (all the same size).
  * @returns {object} The JSON object Durdraw saves.
  */
-function durMovie(name, buffer) {
-  const contents = [];
-  const colorMap = [];
-  for (let r = 0; r < ROWS; r++) {
-    const cells = buffer.row(r);
-    contents.push(cells.map((c) => c.ch).join(""));
-    colorMap.push(cells.map((c) => [DUR_FG.get(c.fg) ?? c.fg, c.bg]));
-  }
+function durMovie(name, buffers) {
+  const frames = buffers.map((buffer, i) => {
+    const contents = [];
+    const colorMap = [];
+    for (let r = 0; r < buffer.rows; r++) {
+      const cells = buffer.row(r);
+      contents.push(cells.map((c) => c.ch).join(""));
+      colorMap.push(cells.map((c) => [DUR_FG.get(c.fg) ?? c.fg, c.bg]));
+    }
+    return { frameNumber: i + 1, delay: 0, contents, colorMap };
+  });
   return {
     DurMovie: {
       formatVersion: 8,
@@ -419,17 +460,33 @@ function durMovie(name, buffer) {
       name,
       artist: "PIZON BBS",
       framerate: 8.0,
-      columns: COLS,
-      lines: ROWS,
+      columns: buffers[0].cols,
+      lines: buffers[0].rows,
       extra: null,
-      frames: [{ frameNumber: 1, delay: 0, contents, colorMap }],
+      frames,
     },
   };
 }
 
+/**
+ * Writes an animation's .anim.json sidecar, one range per line.
+ * @param {Record<string, number[]>} ranges The named ranges: first and last frame, counting from 0.
+ * @returns {string} The file text.
+ */
+function sidecar(ranges) {
+  const lines = Object.entries(ranges).map(([name, [first, last]]) => `    "${name}": [${first}, ${last}]`);
+  return `{\n  "ranges": {\n${lines.join(",\n")}\n  }\n}\n`;
+}
+
 mkdirSync(outDir, { recursive: true });
 for (const [name, def] of Object.entries(screens())) {
-  const json = JSON.stringify(durMovie(name, paint(def.rows, def.under)));
+  const json = JSON.stringify(durMovie(name, [paint(def.rows, def.under)]));
   writeFileSync(join(outDir, `${name}.dur`), gzipSync(Buffer.from(json, "utf8"), { mtime: 0 }));
   console.log(`wrote ${name}.dur`);
+}
+for (const [name, def] of Object.entries(animations())) {
+  const json = JSON.stringify(durMovie(name, def.frames.map((rows) => paint(rows, undefined, def.cols, def.rows))));
+  writeFileSync(join(outDir, `${name}.dur`), gzipSync(Buffer.from(json, "utf8"), { mtime: 0 }));
+  writeFileSync(join(outDir, `${name}.anim.json`), sidecar(def.ranges));
+  console.log(`wrote ${name}.dur (${def.frames.length} frames) and ${name}.anim.json`);
 }

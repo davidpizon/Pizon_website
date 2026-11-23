@@ -51,6 +51,32 @@ internal sealed class ArtGrid
 }
 
 /// <summary>
+/// The frames of a piece of art and how long each one shows.
+/// </summary>
+internal sealed class ArtMovie
+{
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ArtMovie"/> class.
+    /// </summary>
+    /// <param name="frames">The frames, all the same size.</param>
+    /// <param name="delays">How long each frame shows, in milliseconds.</param>
+    public ArtMovie(List<ArtGrid> frames, List<int> delays)
+    {
+        Frames = frames;
+        Delays = delays;
+    }
+
+    /// <summary>Gets the frames.</summary>
+    public List<ArtGrid> Frames { get; }
+
+    /// <summary>Gets how long each frame shows, in milliseconds.</summary>
+    public List<int> Delays { get; }
+
+    /// <summary>Gets a value indicating whether the art has more than one frame.</summary>
+    public bool Animated => Frames.Count > 1;
+}
+
+/// <summary>
 /// Reads Durdraw <c>.dur</c> files: gzipped (or plain) JSON with a <c>DurMovie</c> object. Handles the
 /// format versions before 8 (size in <c>sizeX</c>/<c>sizeY</c>, colors stored column by column) and from 8
 /// on (<c>columns</c>/<c>lines</c>, colors stored row by row). Only 256-color files are read.
@@ -68,13 +94,25 @@ internal static class DurReader
     /// <summary>The tallest art the BBS terminal shows.</summary>
     public const int MaxRows = 25;
 
+    /// <summary>The most frames an animation may have.</summary>
+    public const int MaxFrames = 240;
+
+    /// <summary>The shortest a frame may show, in milliseconds (about 30 frames a second).</summary>
+    public const int MinDelay = 33;
+
+    /// <summary>The longest a frame may show, in milliseconds.</summary>
+    public const int MaxDelay = 5000;
+
+    /// <summary>The frame rate Durdraw uses when a file doesn't give one.</summary>
+    public const double DefaultFrameRate = 8;
+
     /// <summary>
-    /// Reads the first frame of a Durdraw file.
+    /// Reads every frame of a Durdraw file.
     /// </summary>
     /// <param name="bytes">The file's bytes.</param>
-    /// <returns>The first frame, with colors in the PIZON palette.</returns>
+    /// <returns>The frames, with colors in the PIZON palette, and their delays.</returns>
     /// <exception cref="DurException">The file can't be used; the message says why.</exception>
-    public static ArtGrid Read(byte[] bytes)
+    public static ArtMovie Read(byte[] bytes)
     {
         object? root;
         try
@@ -110,20 +148,46 @@ internal static class DurReader
             throw new DurException(DurProblem.TooLarge, string.Format(CultureInfo.InvariantCulture, "The art is {0} x {1}; the terminal shows at most {2} x {3}.", columns, rows, MaxColumns, MaxRows));
         }
 
-        if (movie.TryGetValue("frames", out var f) is false || f is not List<object?> frames || frames.Count == 0 || frames[0] is not Dictionary<string, object?> frame)
+        if (movie.TryGetValue("frames", out var f) is false || f is not List<object?> frames || frames.Count == 0)
         {
             throw new DurException(DurProblem.Unreadable, "There are no frames.");
         }
 
-        if (frames.Count > 1)
+        if (frames.Count > MaxFrames)
         {
-            throw new DurException(DurProblem.Animated, "Animated art isn't supported yet; keep one frame.");
+            throw new DurException(DurProblem.Animated, string.Format(CultureInfo.InvariantCulture, "The animation has {0} frames; the most is {1}.", frames.Count, MaxFrames));
         }
 
-        var grid = new ArtGrid(columns, rows);
-        ReadContents(frame, grid);
-        ReadColors(frame, grid, rowsFirst: version >= 8);
-        return grid;
+        var rate = movie.TryGetValue("framerate", out var r) && r is double fps && fps > 0 ? fps : DefaultFrameRate;
+        var result = new ArtMovie([], []);
+        foreach (var item in frames)
+        {
+            if (item is not Dictionary<string, object?> frame)
+            {
+                throw new DurException(DurProblem.Unreadable, "A frame isn't an object.");
+            }
+
+            var grid = new ArtGrid(columns, rows);
+            ReadContents(frame, grid);
+            ReadColors(frame, grid, rowsFirst: version >= 8);
+            result.Frames.Add(grid);
+            result.Delays.Add(Delay(frame, rate));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Works out how long a frame shows: its own delay in seconds, or one frame at the movie's rate when that
+    /// is 0, kept between <see cref="MinDelay"/> and <see cref="MaxDelay"/> milliseconds.
+    /// </summary>
+    /// <param name="frame">The frame object.</param>
+    /// <param name="rate">The movie's frames per second.</param>
+    /// <returns>The delay in milliseconds.</returns>
+    private static int Delay(Dictionary<string, object?> frame, double rate)
+    {
+        var seconds = frame.TryGetValue("delay", out var d) && d is double s && s > 0 ? s : 1 / rate;
+        return Math.Min(MaxDelay, Math.Max(MinDelay, (int)Math.Round(seconds * 1000)));
     }
 
     /// <summary>
@@ -224,7 +288,7 @@ internal enum DurProblem
     /// <summary>It is bigger than the terminal.</summary>
     TooLarge,
 
-    /// <summary>It has more than one frame.</summary>
+    /// <summary>It is an animation the compiler can't use (too many frames, placeholders in it, bad ranges).</summary>
     Animated,
 }
 

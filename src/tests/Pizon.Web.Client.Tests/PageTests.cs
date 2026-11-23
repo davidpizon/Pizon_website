@@ -6,6 +6,7 @@ using Pizon.Doors.Sdk;
 using Pizon.Doors.Sdk.Text;
 using Pizon.Web.Client.Api;
 using Pizon.Web.Client.Screens;
+using Pizon.Web.Client.Screens.Art;
 using Pizon.Web.Client.Screens.Components;
 using Pizon.Web.Client.Screens.Hosting;
 using Pizon.Web.Client.Screens.Pages;
@@ -97,8 +98,8 @@ internal sealed partial class PageHarness : IAsyncDisposable
     }
 
     /// <summary>
-    /// Every text slot in the page's art is bound by the page (the cursor slot is where the prompt goes, and
-    /// animation slots wait for phase 6).
+    /// Every slot in the page's art is bound by the page: fields, inputs and animations (the cursor slot is
+    /// where the prompt goes).
     /// </summary>
     /// <param name="page">The rendered page.</param>
     /// <typeparam name="T">The page.</typeparam>
@@ -106,7 +107,7 @@ internal sealed partial class PageHarness : IAsyncDisposable
         where T : class, IComponent
     {
         var screen = page.FindComponent<BbsScreen>().Instance;
-        var expected = screen.Art.Fields.Where(f => f.Kind is SlotKind.Field or SlotKind.Input && f.Name != ScreenArt.CursorName).Select(f => f.Name).Order(StringComparer.Ordinal);
+        var expected = screen.Art.Fields.Where(f => f.Name != ScreenArt.CursorName).Select(f => f.Name).Order(StringComparer.Ordinal);
         Assert.Equal(expected, screen.BoundSlots.Select(f => f.Name).Distinct().Order(StringComparer.Ordinal));
     }
 
@@ -265,22 +266,41 @@ public sealed class BulletinPageTests
         p.AssertNoPlaceholders();
     }
 
-    /// <summary>The SysOp cam shows a frame as the bulletin draws and plays once the last page shows.</summary>
+    /// <summary>
+    /// The SysOp cam plays in its slot as soon as the bulletin is drawn (idle frames while the caller is alone),
+    /// switches to its busy frames when someone else calls, and never takes keys.
+    /// </summary>
     /// <returns>A task that completes when the test is done.</returns>
     [Fact]
     public async Task PlaysTheSysopCam()
     {
         await using var p = new PageHarness(path: "/bulletins/2");
         p.Show<BulletinPage>(ps => ps.Add(x => x.Number, 2));
+        p.H.Terminal.OnRead = k =>
+        {
+            if (k == "x")
+            {
+                p.H.Presence.Set(1, 2);
+            }
+        };
         await p.RunAsync(ScreenId.Bulletins, "x");
 
-        Assert.Equal(2, p.H.Terminal.Animations.Count);
-        Assert.Equal(TimeSpan.FromMilliseconds(1), p.H.Terminal.Animations[0].Options.MaxDuration);
-        Assert.True(p.H.Terminal.Animations[1].Options.Loop);
-        Assert.Equal(BulletinPage.CamBox, p.H.Terminal.Animations[1].Options);
-        Assert.Contains("SysOp cam is live", p.Plain, StringComparison.Ordinal);
+        Assert.Empty(p.H.Terminal.Animations);
+        Assert.Equal(2, p.H.Terminal.SlotsStarted.Count);
+        var (name, idle) = p.H.Terminal.SlotsStarted[0];
+        Assert.Equal("CAM", name);
+        Assert.Equal((BulletinCamArt.Cam.Row, BulletinCamArt.Cam.Column, 24, 12), (idle.Row, idle.Column, idle.Width, idle.Height));
+        Assert.Equal(SysopCamArt.Instance.FrameAnsi(0), idle.Frames[0]);
+        Assert.Equal(8, idle.Frames.Count);
+        Assert.All(idle.Delays, d => Assert.Equal(125, d));
+        Assert.True(idle.Loop);
+        Assert.Null(idle.MaxDuration);
+        Assert.Equal(SysopCamArt.Instance.FrameAnsi(8), p.H.Terminal.SlotsStarted[1].Animation.Frames[0]);
+        Assert.Equal(SysopCamArt.Ranges.Busy, BulletinPage.CamRange(2));
+        Assert.Equal(SysopCamArt.Ranges.Idle, BulletinPage.CamRange(1));
         Assert.Contains("press any key", p.Plain, StringComparison.Ordinal);
         Assert.Equal([("/bulletins", false)], p.H.Navigator.Moves);
+        p.AssertNoPlaceholders();
     }
 
     /// <summary>A long bulletin pages: Enter (or any other key) turns the page, then the key prompt shows.</summary>

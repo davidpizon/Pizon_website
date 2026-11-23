@@ -61,6 +61,21 @@ Locally, the same values go in user-secrets:
 dotnet user-secrets --project src/Pizon.Web set "Discord:ClientId" "<id>"
 ```
 
+## Code-quality scan (Qodana)
+
+`.github/workflows/qodana.yml` runs [Qodana](https://www.jetbrains.com/qodana/) for .NET (the community
+linter, `qodana-cdnet`) on **draft** pull requests: when one is opened, updated or reopened, or a PR is
+converted to draft. Ready-for-review PRs are skipped. It analyzes only the files the PR changes, posts a
+summary comment and uploads the full report as an artifact. To scan a whole branch, run the workflow by
+hand from the Actions tab.
+
+- It needs the `QODANA_TOKEN` repository secret: create a project in Qodana Cloud and save its project
+  token under Settings > Secrets and variables > Actions.
+- The analyzer runs on the runner itself (not in Qodana's container), with the .NET SDK from
+  `src/global.json`.
+- Settings (profile, solution, excluded folders) are in `src/qodana.yaml`. The build gate is still
+  `src/coverage.ps1`; Qodana's findings are advisory.
+
 ## Deploying
 
 Needs Docker Desktop or Podman Desktop on your PC (the script uses whichever it finds) and SSH access.

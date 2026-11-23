@@ -13,6 +13,9 @@ namespace Pizon.Screens.Generator;
 [Generator(LanguageNames.CSharp)]
 public sealed class ScreenArtGenerator : IIncrementalGenerator
 {
+    /// <summary>The ending of an animation's sidecar file.</summary>
+    internal const string SidecarExtension = ".anim.json";
+
     /// <summary>The file could not be read as Durdraw art.</summary>
     internal static readonly DiagnosticDescriptor Unreadable = Rule("PZN001", "Art file can't be read", "{0}: {1}");
 
@@ -31,8 +34,8 @@ public sealed class ScreenArtGenerator : IIncrementalGenerator
     /// <summary>The art is bigger than the terminal.</summary>
     internal static readonly DiagnosticDescriptor TooLarge = Rule("PZN006", "Art is too large", "{0}: {1}");
 
-    /// <summary>The art has more than one frame.</summary>
-    internal static readonly DiagnosticDescriptor Animated = Rule("PZN007", "Animated art isn't supported yet", "{0}: {1}");
+    /// <summary>An animation can't be used: too many frames, a placeholder in it, or a bad <c>.anim.json</c>.</summary>
+    internal static readonly DiagnosticDescriptor Animated = Rule("PZN007", "Bad animation", "{0}: {1}");
 
     /// <summary>A placeholder uses a name the generated class needs.</summary>
     internal static readonly DiagnosticDescriptor ReservedName = Rule("PZN008", "Reserved placeholder name", "{0}: {1}");
@@ -40,9 +43,14 @@ public sealed class ScreenArtGenerator : IIncrementalGenerator
     /// <inheritdoc/>
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
+        var sidecars = context.AdditionalTextsProvider
+            .Where(file => file.Path.EndsWith(SidecarExtension, StringComparison.OrdinalIgnoreCase))
+            .Select((file, cancel) => new KeyValuePair<string, string?>(file.Path, file.GetText(cancel)?.ToString()))
+            .Collect();
         var art = context.AdditionalTextsProvider
             .Where(file => file.Path.EndsWith(".dur", StringComparison.OrdinalIgnoreCase))
-            .Select((file, cancel) => Compile(file.Path, ReadBytes(file.Path)));
+            .Combine(sidecars)
+            .Select((pair, cancel) => Compile(pair.Left.Path, ReadBytes(pair.Left.Path), SidecarFor(pair.Left.Path, pair.Right)));
         context.RegisterSourceOutput(art, static (output, compiled) =>
         {
             foreach (var diagnostic in compiled.Diagnostics)
@@ -62,8 +70,9 @@ public sealed class ScreenArtGenerator : IIncrementalGenerator
     /// </summary>
     /// <param name="path">The file's path (for messages and the class name).</param>
     /// <param name="bytes">The file's bytes, or null when it couldn't be read.</param>
+    /// <param name="sidecar">The text of its <c>.anim.json</c>, if it has one.</param>
     /// <returns>The generated source (when there were no problems) and the diagnostics.</returns>
-    internal static CompiledArt Compile(string path, byte[]? bytes)
+    internal static CompiledArt Compile(string path, byte[]? bytes, string? sidecar = null)
     {
         var fileName = Path.GetFileName(path);
         var result = new CompiledArt(ArtEmitter.ClassName(fileName) + ".g.cs");
@@ -73,10 +82,20 @@ public sealed class ScreenArtGenerator : IIncrementalGenerator
             return result;
         }
 
-        ArtGrid grid;
+        ArtMovie movie;
+        List<KeyValuePair<string, (int First, int Last)>> ranges = [];
         try
         {
-            grid = DurReader.Read(bytes);
+            movie = DurReader.Read(bytes);
+            if (sidecar is not null)
+            {
+                if (!movie.Animated)
+                {
+                    throw new DurException(DurProblem.Animated, "The art has one frame, so its .anim.json has nothing to name; delete it or add frames.");
+                }
+
+                ranges = AnimationSettings.Ranges(sidecar, movie.Frames.Count);
+            }
         }
         catch (DurException ex)
         {
@@ -91,7 +110,20 @@ public sealed class ScreenArtGenerator : IIncrementalGenerator
             return result;
         }
 
-        var scan = SlotScanner.Scan(grid);
+        var scan = SlotScanner.Scan(movie.Frames[0]);
+        if (movie.Animated)
+        {
+            for (var i = 0; i < movie.Frames.Count; i++)
+            {
+                var frame = i == 0 ? scan : SlotScanner.Scan(movie.Frames[i]);
+                if (frame.Slots.Count > 0 || frame.Hotspots.Count > 0 || frame.Problems.Count > 0)
+                {
+                    result.Diagnostics.Add(Diagnostic.Create(Animated, FileLocation(path), fileName, "Frame " + (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) + " has a placeholder (an '@'); animated art can't have placeholders, so play it in a <Slot> of still art."));
+                    return result;
+                }
+            }
+        }
+
         foreach (var problem in scan.Problems)
         {
             var rule = problem.Id switch
@@ -107,10 +139,22 @@ public sealed class ScreenArtGenerator : IIncrementalGenerator
 
         if (scan.Problems.Count == 0)
         {
-            result.Source = ArtEmitter.Emit(fileName, grid, scan);
+            result.Source = ArtEmitter.Emit(fileName, movie, scan, ranges);
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Finds the sidecar of an art file: <c>cam.dur</c>'s is <c>cam.anim.json</c> in the same folder.
+    /// </summary>
+    /// <param name="artPath">The art file's path.</param>
+    /// <param name="sidecars">Every sidecar's path and text.</param>
+    /// <returns>The sidecar's text, or null when there is none.</returns>
+    internal static string? SidecarFor(string artPath, IEnumerable<KeyValuePair<string, string?>> sidecars)
+    {
+        var expected = Path.Combine(Path.GetDirectoryName(artPath) ?? string.Empty, Path.GetFileNameWithoutExtension(artPath) + SidecarExtension);
+        return sidecars.FirstOrDefault(s => string.Equals(s.Key, expected, StringComparison.OrdinalIgnoreCase)).Value;
     }
 
     [SuppressMessage("MicrosoftCodeAnalysisCorrectness", "RS1035:Do not use APIs banned for analyzers", Justification = "Durdraw files are gzip, which AdditionalText.GetText() would corrupt by decoding as text; the file is a declared AdditionalFiles input, so reading its bytes keeps the build deterministic.")]

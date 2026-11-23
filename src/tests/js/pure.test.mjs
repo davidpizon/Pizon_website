@@ -343,3 +343,74 @@ test("the .sh converter builds frames from printf, echo, clear and sleep", () =>
   assert.equal(sh.convert("printf 'x'\nsleep 0.5", 12).fps, 12);
   assert.equal(sh.convert("", null).fps, 10);
 });
+
+const slots = await import(new URL("compositor.js", JS));
+
+test("slot frames follow their own delays, looping or resting on the last", () => {
+  assert.equal(slots.frameAt([100, 200], 0, true), 0);
+  assert.equal(slots.frameAt([100, 200], 99, true), 0);
+  assert.equal(slots.frameAt([100, 200], 100, true), 1);
+  assert.equal(slots.frameAt([100, 200], 300, true), 0);
+  assert.equal(slots.frameAt([100, 200], 300, false), 1);
+  assert.equal(slots.frameAt([100, 200], 5000, false), 1);
+  assert.equal(slots.frameAt([0], 50, true), 0);
+  assert.equal(slots.MAX_SLOT_FRAMES, 240);
+});
+
+test("a slot frame is stamped into its own box only, clipped to the screen", () => {
+  const box = slots.parseFrame("\x1b[2;1H\x1b[38;5;12mb", 2, 2);
+  assert.equal(box.cellAt(1, 0).ch, "b");
+  assert.equal(box.cellAt(1, 0).fg, 12);
+  const screen = new CellBuffer(3, 2);
+  screen.dirty.clear();
+  slots.stamp(screen, slots.parseFrame("xy\x1b[2;1Hzw", 2, 2), 1, 2);
+  assert.deepEqual([screen.rowText(0), screen.rowText(1)], ["", "  x"]);
+  assert.deepEqual([...screen.dirty], [1]);
+  slots.stamp(screen, slots.parseFrame("q", 1, 1), -1, -1);
+  assert.equal(screen.rowText(0), "");
+});
+
+test("the slot layer starts, ticks, rests and stops slots", () => {
+  const layer = new slots.SlotLayer();
+  const screen = new CellBuffer(4, 2);
+  layer.start("none", { width: 1, height: 1, frames: [] });
+  layer.start("flat", { width: 0, height: 1, frames: ["a"] });
+  layer.start("thin", { width: 1, height: 0, frames: ["a"] });
+  layer.start("bad", { width: 1, height: 1 });
+  assert.equal(layer.active, false);
+
+  layer.start("cam", { row: 1, col: 1, width: 2, height: 1, frames: ["ab", "cd"], delays: [100, 1] });
+  assert.equal(layer.tick(screen, 1000, false), true);
+  assert.equal(screen.rowText(1), " ab");
+  assert.equal(layer.tick(screen, 1050, false), false);
+  assert.equal(layer.tick(screen, 1100, false), true);
+  assert.equal(screen.rowText(1), " cd");
+  assert.equal(layer.slots.get("cam").delays[1], slots.MIN_DELAY);
+  layer.stop("cam");
+  assert.equal(layer.active, false);
+
+  layer.start("once", { width: 1, height: 1, frames: ["1", "2"], delays: [9999999, "x"], loop: false });
+  assert.deepEqual(layer.slots.get("once").delays, [slots.MAX_DELAY, 125]);
+  assert.equal(layer.slots.get("once").loop, false);
+  layer.tick(screen, 0, false);
+  layer.tick(screen, 100000, false);
+  assert.equal(screen.rowText(0), "2");
+
+  layer.start("timed", { width: 1, height: 1, frames: ["t", "u"], delays: [50, 50], maxMs: 60 });
+  layer.tick(screen, 0, false);
+  layer.tick(screen, 55, false);
+  assert.equal(screen.rowText(0), "u");
+  layer.tick(screen, 70, false);
+  assert.equal(screen.rowText(0), "t");
+  assert.equal(layer.slots.has("timed"), false);
+
+  layer.start("calm", { width: 1, height: 1, frames: ["c", "d"] });
+  assert.equal(layer.tick(screen, 0, true), true);
+  assert.equal(screen.rowText(0), "c");
+  assert.equal(layer.slots.has("calm"), false);
+
+  layer.start("a", { width: 1, height: 1, frames: ["a"] });
+  layer.start("b", { width: 1, height: 1, frames: ["b"] });
+  layer.stopAll();
+  assert.equal(layer.active, false);
+});

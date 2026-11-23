@@ -1,0 +1,42 @@
+# Qodana code-quality scan of draft pull requests (Qodana for .NET, community linter).
+# Runs when a draft PR is opened, updated or reopened, or a PR is converted to draft; ready PRs are skipped.
+# Run it by hand from the Actions tab ("Run workflow") on any branch.
+# Needs the QODANA_TOKEN repository secret (a Qodana Cloud project token). Settings: src/qodana.yaml.
+name: Qodana
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, converted_to_draft]
+  workflow_dispatch:
+
+concurrency:
+  group: qodana-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qodana:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v6.1.0
+        with:
+          global-json-file: src/global.json
+
+      - name: Qodana scan
+        uses: JetBrains/qodana-action@v2026.2.2
+        with:
+          args: --linter,qodana-cdnet,--within-docker,false,--project-dir,src,--repository-root,.
+          pr-mode: ${{ github.event_name == 'pull_request' }}
+          upload-result: true
+        env:
+          QODANA_TOKEN: ${{ secrets.QODANA_TOKEN }}

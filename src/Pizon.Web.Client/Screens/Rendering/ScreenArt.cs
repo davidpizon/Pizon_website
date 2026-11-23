@@ -41,7 +41,9 @@ public sealed record HotspotSlot(string Key, int Row, int Column, int Width);
 
 /// <summary>
 /// Art compiled at build time from a <c>.dur</c> file in <c>Screens/Art</c>: its cells (with the
-/// placeholders already blanked out), its slots and its hotspots. The generated subclasses
+/// placeholders already blanked out), its slots and its hotspots. Animated art (a <c>.dur</c> with more than
+/// one frame) also has its <see cref="Frames"/> and the named <see cref="FrameRanges"/> from its
+/// <c>.anim.json</c>; it is played in a <c>&lt;Slot&gt;</c> of still art. The generated subclasses
 /// (<c>MainMenuArt</c> and so on) live in <c>Pizon.Web.Client.Screens.Art</c>.
 /// </summary>
 public abstract class ScreenArt
@@ -52,6 +54,7 @@ public abstract class ScreenArt
     private readonly string cells;
     private readonly byte[] foreground;
     private readonly byte[] background;
+    private readonly Dictionary<int, string> frameAnsi = [];
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ScreenArt"/> class.
@@ -64,7 +67,8 @@ public abstract class ScreenArt
     /// <param name="background">Every cell's background color, row by row.</param>
     /// <param name="fields">The slots.</param>
     /// <param name="hotspots">The hotspots.</param>
-    protected ScreenArt(string name, int columns, int rows, string cells, byte[] foreground, byte[] background, IReadOnlyList<FieldSlot> fields, IReadOnlyList<HotspotSlot> hotspots)
+    /// <param name="animation">The frames and ranges of animated art, or <see langword="null"/> for still art.</param>
+    protected ScreenArt(string name, int columns, int rows, string cells, byte[] foreground, byte[] background, IReadOnlyList<FieldSlot> fields, IReadOnlyList<HotspotSlot> hotspots, ArtAnimation? animation = null)
     {
         ArgumentNullException.ThrowIfNull(cells);
         ArgumentNullException.ThrowIfNull(foreground);
@@ -82,6 +86,13 @@ public abstract class ScreenArt
         this.background = background;
         Fields = fields;
         Hotspots = hotspots;
+        if (animation is not null && animation.Frames.Any(f => f.Cells.Length != cells.Length))
+        {
+            throw new ArgumentException("Every frame must be the art's size.", nameof(animation));
+        }
+
+        Frames = animation?.Frames ?? [new ArtFrame(cells, foreground, background, 0)];
+        FrameRanges = animation?.Ranges ?? new Dictionary<string, FrameRange>();
     }
 
     /// <summary>Gets the art file's name without the extension.</summary>
@@ -98,6 +109,15 @@ public abstract class ScreenArt
 
     /// <summary>Gets the hotspots, in the order they appear.</summary>
     public IReadOnlyList<HotspotSlot> Hotspots { get; }
+
+    /// <summary>Gets the frames: one for still art, several for animated art.</summary>
+    public IReadOnlyList<ArtFrame> Frames { get; }
+
+    /// <summary>Gets a value indicating whether the art has more than one frame.</summary>
+    public bool IsAnimated => Frames.Count > 1;
+
+    /// <summary>Gets the named frame ranges from the art's <c>.anim.json</c>.</summary>
+    public IReadOnlyDictionary<string, FrameRange> FrameRanges { get; }
 
     /// <summary>Gets the slot where the cursor rests, if the art has one.</summary>
     public FieldSlot? CursorSlot => Field(CursorName);
@@ -129,6 +149,46 @@ public abstract class ScreenArt
     /// <param name="column">The 1-based column.</param>
     /// <returns>The palette index.</returns>
     public byte BackgroundAt(int row, int column) => background[Index(row, column)];
+
+    /// <summary>
+    /// Gets the frames of a named range, or of the whole art.
+    /// </summary>
+    /// <param name="range">A name from <see cref="FrameRanges"/> (the generated <c>Ranges</c> constants), or <see langword="null"/> for every frame.</param>
+    /// <returns>The first and last frame.</returns>
+    /// <exception cref="ArgumentException">The art has no range by that name.</exception>
+    public FrameRange Range(string? range)
+    {
+        if (range is null)
+        {
+            return new FrameRange(0, Frames.Count - 1);
+        }
+
+        return FrameRanges.TryGetValue(range, out var found)
+            ? found
+            : throw new ArgumentException($"The art '{Name}' has no range '{range}' (it has: {string.Join(", ", FrameRanges.Keys.DefaultIfEmpty("none"))}).", nameof(range));
+    }
+
+    /// <summary>
+    /// Draws a frame as ANSI positioned from the top left of its own box (see <see cref="ArtFrame.ToAnsi"/>).
+    /// Each frame is drawn once and kept.
+    /// </summary>
+    /// <param name="index">The frame, counting from 0.</param>
+    /// <returns>Finished ANSI.</returns>
+    public string FrameAnsi(int index)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, Frames.Count);
+        lock (frameAnsi)
+        {
+            if (!frameAnsi.TryGetValue(index, out var ansi))
+            {
+                ansi = Frames[index].ToAnsi(Columns);
+                frameAnsi[index] = ansi;
+            }
+
+            return ansi;
+        }
+    }
 
     private int Index(int row, int column)
     {

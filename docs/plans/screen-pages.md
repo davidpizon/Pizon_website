@@ -1,16 +1,30 @@
 # Plan: BBS screens as routable, compiled Razor-style pages bound to .DUR/.ANS art
 
-Status: **phases 1-5 built.** Phase 1 (addresses on the existing screens) was built on 2026-11-17. Most
+Status: **phases 1-6 built.** Phase 1 (addresses on the existing screens) was built on 2026-11-17. Most
 of phases 2 and 3 followed on 2026-11-20: `TextLayout`, the `.dur` screen compiler (`Pizon.Screens.Generator`,
 diagnostics PZN001-PZN008), compiled art for every screen and `ScreenView`. Phase 4 (the page model) was
 built on 2026-11-22: `BbsHost`, `BbsPage`, `[BbsAccess]`, the `BbsScreen`, `Field`, `List` and `Hotkey`
 components, and pages for the main menu, bulletins (list, `/bulletins/{n}`, `/bulletins/top`), the message
 board, file areas (`/files`, `/files/{area}`), doors and the user list. Phase 5 (forms) was built on
 2026-11-23: `BbsForm`, `InputField`, `BlockEditor` and `TextBox`, and pages for settings, the handle, page
-SysOp, compose and the SysOp console. Still to do: `.ans` compilation, animated art (phase 6) and the
-clean-up (phase 7). Two earlier changes from the plan:
+SysOp, compose and the SysOp console. Phase 6 (animation) was built on 2026-11-23: animated `.dur` art,
+`.anim.json` ranges, `compositor.js` background slots and `<Slot>`; the bulletin #2 cam plays in one.
+Still to do: `.ans` compilation and the clean-up (phase 7). Two earlier changes from the plan:
 hotspots are written `@[K] label@` (the label keeps its place), and 16-color Durdraw files are rejected
 (PZN002) for now.
+
+How phase 6 differs from the plan below:
+- **No fields inside animations yet.** Animated art may not contain placeholders (PZN007); it plays in a
+  `<Slot>` of still art, which holds the fields. Moving, recoloring fields per frame waits until a screen
+  needs one.
+- **Ranges and settings.** The `.anim.json` sidecar holds only `ranges`, which become typed constants
+  (`SysopCamArt.Ranges.Busy`). `Loop` and `MaxDuration` are `<Slot>` parameters, not sidecar settings.
+- **`compositor.js` stamps, it doesn't layer.** Each slot stamps its current frame into the one cell
+  buffer, inside its own box. Fields never sit inside a slot's box, so there is no separate field layer.
+  Slots pause while a transition or full-screen animation runs, and clearing the screen stops them all.
+- **The cam is a stand-in.** `sysop-cam.dur` is drawn by `make-screen-art.mjs` (`TODO-SYSOP`), replacing
+  the never-committed `anim/sysopcam.json`; bulletins now say `"cam": true` instead of an animation URL.
+  Its busy frames play while other callers are online.
 
 How phase 5 differs from the plan below:
 - **Login stays a legacy screen** until phase 7. It is a key menu with no art of its own, and its sign-in
@@ -44,7 +58,7 @@ How phase 4 differs from the plan below:
 - **Routes.** `/board/{id}`, `/board/{id}/reply` and `/doors/{id}` aren't built. The message board's [N] and [R]
   go to compose pages at `/board/new` and `/board/reply` (which asks for the message number); see phase 5.
 - **`List`** turns the page on any key that no hotkey takes, as the old paging did, and runs `OnLastPage` once
-  the last page shows. The bulletin #2 cam uses that to play until phase 6 moves it into a `<Slot>`.
+  the last page shows.
 - **Imperative moments stay imperative.** Downloads and doors write to the terminal from a key handler, then
   call `BbsScreen.Redraw()`.
 

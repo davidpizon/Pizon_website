@@ -168,6 +168,32 @@ public sealed class JsTerminal : ITerminal, IBrowserStorage, IAsyncDisposable
     public Task BeepAsync() => module.InvokeVoidAsync("beep").AsTask();
 
     /// <inheritdoc />
+    public Task StartSlotAsync(string name, SlotAnimation animation)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        ArgumentNullException.ThrowIfNull(animation);
+        var js = new Dictionary<string, object?>
+        {
+            ["row"] = animation.Row - 1,
+            ["col"] = animation.Column - 1,
+            ["width"] = animation.Width,
+            ["height"] = animation.Height,
+            ["frames"] = animation.Frames,
+            ["delays"] = animation.Delays,
+            ["loop"] = animation.Loop,
+        };
+        if (animation.MaxDuration is { } max)
+        {
+            js["maxMs"] = max.TotalMilliseconds;
+        }
+
+        return module.InvokeVoidAsync("startSlot", name, js).AsTask();
+    }
+
+    /// <inheritdoc />
+    public Task StopSlotAsync(string name) => module.InvokeVoidAsync("stopSlot", name).AsTask();
+
+    /// <inheritdoc />
     public Task OpenUrlAsync(Uri url)
     {
         ArgumentNullException.ThrowIfNull(url);

@@ -29,8 +29,9 @@
 
   <ItemGroup>
     <!-- Screen art is compiled into the assembly by the screen compiler and never published as a file. -->
-    <AdditionalFiles Include="Screens\Art\*.dur" />
-    <None Remove="Screens\Art\*.dur" />
+    <AdditionalFiles Include="Screens\Art\*.dur;Screens\Art\*.anim.json" />
+    <None Remove="Screens\Art\*.dur;Screens\Art\*.anim.json" />
+    <Content Remove="Screens\Art\*.anim.json" />
   </ItemGroup>
 
   <ItemGroup>

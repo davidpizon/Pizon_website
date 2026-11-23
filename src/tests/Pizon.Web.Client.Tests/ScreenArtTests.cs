@@ -15,15 +15,18 @@ public sealed class ScreenArtTests
     /// <summary>Gets every compiled art class's instance.</summary>
     public static TheoryData<string> ArtNames => [.. AllArt().Select(a => a.Name)];
 
-    /// <summary>Every screen is drawn from compiled art, and none of it shows placeholder syntax to the caller.</summary>
+    /// <summary>
+    /// Every screen is drawn from compiled art the size of the terminal (animated art, played in a slot, may be
+    /// smaller), and none of it shows placeholder syntax to the caller.
+    /// </summary>
     /// <param name="name">The art's name.</param>
     [Theory]
     [MemberData(nameof(ArtNames))]
     public void ArtNeverShowsPlaceholders(string name)
     {
         var art = AllArt().Single(a => a.Name == name);
-        Assert.Equal(80, art.Columns);
-        Assert.Equal(25, art.Rows);
+        Assert.Equal((80, 25), art.IsAnimated ? (80, 25) : (art.Columns, art.Rows));
+        Assert.InRange(art.Columns * art.Rows, 1, 80 * 25);
         var view = new ScreenView(art);
         foreach (var slot in art.Fields)
         {

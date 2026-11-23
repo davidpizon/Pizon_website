@@ -9,8 +9,8 @@ namespace Pizon.Web.Client.Screens.Components;
 
 /// <summary>
 /// One screen of a page: compiled art plus the values, lists, inputs and hotkeys bound to it by its child
-/// <see cref="Field"/>, <see cref="List"/>, <see cref="InputField"/>, <see cref="BlockEditor"/> and
-/// <see cref="Hotkey"/> components. While an input has the cursor, keys go to it before any hotkey. It writes nothing to the
+/// <see cref="Field"/>, <see cref="List"/>, <see cref="InputField"/>, <see cref="BlockEditor"/>,
+/// <see cref="Slot"/> and <see cref="Hotkey"/> components. While an input has the cursor, keys go to it before any hotkey. It writes nothing to the
 /// HTML page except a hidden mirror for screen readers (<see cref="ScreenMirror"/>); <see cref="BbsHost"/>
 /// draws it in the terminal as finished ANSI, and when a bound value changes while it is on screen it sends
 /// just that slot, the way Razor re-renders only what changed.
@@ -21,6 +21,7 @@ public sealed partial class BbsScreen : IDisposable
     private readonly List<Hotkey> hotkeys = [];
     private readonly List<List> lists = [];
     private readonly List<TextInput> inputs = [];
+    private readonly List<Slot> slots = [];
     private readonly HashSet<object> changedWhileHidden = [];
     private readonly Queue<List> lastPages = new();
     private ScreenView? view;
@@ -86,10 +87,13 @@ public sealed partial class BbsScreen : IDisposable
     /// <summary>Gets the input that has the cursor, if any.</summary>
     internal TextInput? Active { get; private set; }
 
-    /// <summary>Gets every slot something is bound to: fields, lists and their "more" slots.</summary>
+    /// <summary>Gets every slot something is bound to: fields, lists and their "more" slots, inputs and animations.</summary>
     internal IEnumerable<FieldSlot> BoundSlots =>
         values.Keys.Concat(lists.Select(l => l.Slot)).Concat(lists.Where(l => l.More is not null).Select(l => l.More!))
-            .Concat(inputs.Select(i => i.Slot));
+            .Concat(inputs.Select(i => i.Slot)).Concat(slots.Select(s => s.At));
+
+    /// <summary>Gets the animation slots.</summary>
+    internal IReadOnlyList<Slot> Slots => slots;
 
     /// <summary>Gets the hotkeys, in the order they were declared.</summary>
     internal IReadOnlyList<Hotkey> Hotkeys => hotkeys;
@@ -191,6 +195,11 @@ public sealed partial class BbsScreen : IDisposable
         }
 
         changedWhileHidden.Clear();
+        foreach (var slot in slots)
+        {
+            PlaySlot(slot);
+        }
+
         InputsChanged();
         if (shownPrompt != (Prompt ?? string.Empty))
         {
@@ -388,6 +397,34 @@ public sealed partial class BbsScreen : IDisposable
         }
 
         Focus(inputs.FirstOrDefault(i => i.Enabled && (view is null || view.Art.Fields.Contains(i.Slot))));
+    }
+
+    /// <summary>
+    /// Adds an animation slot, or notes that its parameters changed, and starts it playing when the screen is
+    /// showing (otherwise it starts once the screen is drawn).
+    /// </summary>
+    /// <param name="slot">The slot.</param>
+    internal void PlaySlot(Slot slot)
+    {
+        if (!slots.Contains(slot))
+        {
+            slots.Add(slot);
+        }
+
+        if (IsLive && view is not null && view.Art.Fields.Contains(slot.At))
+        {
+            _ = Host.Terminal.StartSlotAsync(slot.At.Name, slot.Animation);
+        }
+    }
+
+    /// <summary>Removes an animation slot, stopping it when the screen is showing.</summary>
+    /// <param name="slot">The slot.</param>
+    internal void RemoveSlot(Slot slot)
+    {
+        if (slots.Remove(slot) && IsLive && view is not null && view.Art.Fields.Contains(slot.At))
+        {
+            _ = Host.Terminal.StopSlotAsync(slot.At.Name);
+        }
     }
 
     /// <summary>Registers a hotkey.</summary>

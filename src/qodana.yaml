@@ -1,0 +1,12 @@
+# Qodana settings for the .NET solution (used by .github/workflows/qodana.yml; see docs/deploy.md).
+version: "1.0"
+profile:
+  name: qodana.recommended
+dotnet:
+  solution: Pizon.slnx
+exclude:
+  - name: All
+    paths:
+      - Pizon.Web/Data/Migrations
+      - templates
+      - tests/js

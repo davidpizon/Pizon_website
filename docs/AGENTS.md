@@ -39,6 +39,7 @@ src/
   Pizon.slnx          the solution
   Directory.Build.props, Directory.Packages.props, .editorconfig, stylecop.json, global.json
   coverage.ps1        the test + coverage gate (also run by deploy/deploy.ps1)
+  qodana.yaml         Qodana settings for the draft-PR scan (.github/workflows/qodana.yml)
   Pizon.AppHost/      Aspire AppHost (web + SQLite; SQLite Web and ntfy containers are opt-in)
   Pizon.ServiceDefaults/  OpenTelemetry, health checks (/healthz), resilience
   Pizon.Web/          server: auth, APIs, EF Core, SignalR hub, notifier
@@ -54,7 +55,8 @@ src/
   Dockerfile          production image (build context: src/)
 ```
 
-**All code goes under `src/`, all docs under `docs/`.** Nothing else belongs at the repo root.
+**All code goes under `src/`, all docs under `docs/`.** Nothing else belongs at the repo root, apart from
+`.github/` (the agent-file symlink and `workflows/qodana.yml`, the Qodana scan of draft PRs).
 
 ## Build rules (enforced — the build or tests fail otherwise)
 

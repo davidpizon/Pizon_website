@@ -38,7 +38,9 @@ public sealed class BbsApp
     /// <summary>Gets the screens that are pages now, run through <see cref="PageScreen"/>.</summary>
     public static IReadOnlySet<ScreenId> PageScreens { get; } = new HashSet<ScreenId>
     {
-        ScreenId.MainMenu, ScreenId.Bulletins, ScreenId.MessageBoard, ScreenId.FileAreas, ScreenId.Doors, ScreenId.UserList,
+        ScreenId.MainMenu, ScreenId.Bulletins, ScreenId.MessageBoard, ScreenId.BoardNew, ScreenId.BoardReply, ScreenId.FileAreas,
+        ScreenId.Doors, ScreenId.UserList, ScreenId.PageSysop, ScreenId.ChangeHandle, ScreenId.NewUserHandle, ScreenId.Settings,
+        ScreenId.SysopConsole,
     };
 
     /// <summary>
@@ -102,16 +104,9 @@ public sealed class BbsApp
         ScreenId.Welcome => new WelcomeScreen(context),
         ScreenId.Login => new LoginScreen(context),
         ScreenId.SignIn => new SignInScreen(context),
-        ScreenId.NewUserHandle => new HandleScreen(context, isNewUser: true),
-        ScreenId.ChangeHandle => new HandleScreen(context, isNewUser: false),
         ScreenId.RipCard => new RipCardScreen(context),
-        ScreenId.BoardNew => new BoardComposeScreen(context, reply: false),
-        ScreenId.BoardReply => new BoardComposeScreen(context, reply: true),
-        ScreenId.PageSysop => new PageSysopScreen(context),
-        ScreenId.Settings => new SettingsScreen(context),
         ScreenId.Goodbye => new GoodbyeScreen(context),
         ScreenId.Logout => new LogoutScreen(context),
-        ScreenId.SysopConsole => new SysopConsoleScreen(context),
         ScreenId.NotFound => new NotFoundScreen(context),
         _ => null,
     };

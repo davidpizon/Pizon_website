@@ -27,6 +27,7 @@ public sealed class BbsHost
     private BbsScreen? drawn;
     private int drawnVersion;
     private int signals;
+    private bool lineMode;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="BbsHost"/> class.
@@ -107,6 +108,21 @@ public sealed class BbsHost
     }
 
     /// <summary>
+    /// Switches the terminal's line mode (the on-screen keyboard on phones) on while an input has the cursor.
+    /// </summary>
+    /// <param name="on">Whether an input is taking typing.</param>
+    public void SetLineMode(bool on)
+    {
+        if (context is null || lineMode == on)
+        {
+            return;
+        }
+
+        lineMode = on;
+        _ = context.Terminal.SetLineModeAsync(on);
+    }
+
+    /// <summary>
     /// Runs the pages for one screen until the caller leaves it: draws the newest page whose address belongs
     /// to <paramref name="screen"/>, sends it keys, and redraws whenever another page for the same screen
     /// replaces it (<c>/bulletins</c> to <c>/bulletins/2</c>) or the page asks to be redrawn.
@@ -136,6 +152,7 @@ public sealed class BbsHost
 
                 drawn = page;
                 drawnVersion = page.Version;
+                SetLineMode(false);
                 await Terminal.TransitionAsync(page.Enter, page.Compose(), cancellationToken);
                 Live = page;
                 await page.AfterDrawAsync(cancellationToken);
@@ -144,6 +161,7 @@ public sealed class BbsHost
         }
         finally
         {
+            SetLineMode(false);
             Live = null;
             drawn = null;
             PageToken = CancellationToken.None;

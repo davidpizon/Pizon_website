@@ -1,0 +1,12 @@
+@page "/sysop/pages"
+@layout BbsLayout
+@inherits BbsPage
+@attribute [BbsAccess(ScreenAccess.Sysop)]
+
+<PageTitle>@RouteTable.Tab("Pages inbox")</PageTitle>
+<BbsScreen Art="SysopPagesArt.Instance" Prompt="@prompt" OnKey="LeaveAsync" OnDrawn="LoadAsync">
+    <Field Slot="SysopPagesArt.Title" Value="@("PAGES INBOX")" />
+    <List Slot="SysopPagesArt.Body" Items="@(lines ?? NoLines)" More="SysopPagesArt.More" OnLastPage="LastPage" />
+    <Hotkey Key="Q" OnPress="LeaveAsync" Label="Back to the console" />
+    <Hotkey Key="@DoorKeys.Escape" OnPress="LeaveAsync" />
+</BbsScreen>

@@ -1,0 +1,20 @@
+@page "/handle/new"
+@layout BbsLayout
+@inherits HandlePageBase
+@attribute [BbsAccess(ScreenAccess.Public)]
+
+<PageTitle>@RouteTable.Tab("Choose your handle")</PageTitle>
+<BbsScreen Art="HandleArt.Instance" Prompt="@Prompt" OnKey="OnKey">
+    <Field Slot="HandleArt.Title" Value="@Title" />
+    @if (CanEdit)
+    {
+        <BbsForm Model="Model" StatusSlot="HandleArt.Status" Status="@Status" Disabled="@Done" OnValidSubmit="SubmitAsync" OnCancel="CancelAsync">
+            <DataAnnotationsValidator />
+            <InputField Slot="HandleArt.Handle" @bind-Value="Model.Handle" MaxLength="Limits.HandleMax" Label="Handle" />
+        </BbsForm>
+    }
+    else
+    {
+        <Field Slot="HandleArt.Status" Value="@Ui.AccessDeniedText(Session)" />
+    }
+</BbsScreen>

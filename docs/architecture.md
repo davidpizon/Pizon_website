@@ -18,21 +18,26 @@ The terminal lives in `Layout/BbsLayout`, which every screen address shares, so 
 screens. Screens come in two kinds while [plans/screen-pages.md](plans/screen-pages.md) is under way:
 
 - **Screen pages** (`Screens/Pages/*.razor`): the main menu, bulletins, Top Players, the message board, file
-  areas, doors and the user list. Each is an `@page` that inherits `BbsPage` and declares
+  areas, doors, the user list, settings, the handle, page SysOp, compose and the SysOp console. Each is an `@page` that inherits `BbsPage` and declares
   `[BbsAccess(...)]`. It binds data to its compiled art with components that render no HTML
   (`Screens/Components`):
   - `<BbsScreen Art="…">` holds the screen, with its `Enter`/`Leave` transitions, `Prompt` and `OnKey`;
   - `<Field Slot="…" Value="…">` binds one value;
   - `<List Slot="…" Items="…" More="…">` pages lines through a block;
-  - `<Hotkey Key="…" Href="…">` goes to an address, or `Screen="…"` leaves for a screen with no address.
+  - `<Hotkey Key="…" Href="…">` goes to an address, or `Screen="…"` leaves for a screen with no address;
+  - `<BbsForm Model="…" StatusSlot="…" OnValidSubmit="…" OnCancel="…">` validates its model with
+    DataAnnotations (an `EditContext`) and shows the first error in the status slot;
+  - `<InputField Slot="…" @bind-Value="…">` types into a one-line input slot (`@?NAME@` in the art), and
+    `<BlockEditor>` into a taller one, word-wrapping as you type. Both edit a `Screens/Rendering/TextBox`,
+    which sends only the cells that changed. Enter moves to the form's next input and submits from the
+    last (a block ends on a blank line); Up and Down move between inputs; Escape cancels.
 
   `Screens/Hosting/BbsHost` (one per tab) draws the page for the current address and pumps keys to it.
-  Hotkeys come first, then a list's next page, then `OnKey`. When a bound value changes while the page is on
+  The input with the cursor gets keys first, then hotkeys, then a list's next page, then `OnKey`. When a bound value changes while the page is on
   screen, Razor's normal re-render sends just that slot to the terminal. The menu's callers-online row works
   this way. `BbsScreen` also renders a visually hidden mirror of its text and real links for its hotkeys,
   for screen readers.
-- **Legacy screens** (`Screens/*.cs`): the entrance, login, handle, compose, page SysOp, settings, goodbye,
-  RIP card and SysOp console. Each implements `IScreen`, writes ANSI and reads keys, then returns the next
+- **Legacy screens** (`Screens/*.cs`): the entrance, login, goodbye and RIP card. Each implements `IScreen`, writes ANSI and reads keys, then returns the next
   `ScreenId`. `BbsApp` runs them in a loop. For a screen that is now a page, it runs `PageScreen`, which
   hands the terminal to `BbsHost` until the address moves to another screen or a hotkey leaves for one.
 
@@ -60,7 +65,8 @@ Each screen has its own address, so it can be bookmarked and shared, and Back an
 | `/files`, `/files/{area}` | The file areas, one area (`/files/tools`) | anyone |
 | `/board/new`, `/board/reply` | Write or reply on the message board | members |
 | `/page`, `/handle` | Page the SysOp, change handle | members |
-| `/sysop` | SysOp console | the SysOp |
+| `/handle/new` | Choose a handle (a new caller, right after Discord sign-in) | anyone |
+| `/sysop`, `/sysop/queue`, `/sysop/pages`, `/sysop/delete` | SysOp console, moderation queue, pages inbox, delete a message | the SysOp |
 
 - **Following the address.** When a screen ends, `BbsApp` puts the next screen's address in the address bar.
   Leaving an entrance screen (dial-up, login, new-user handle) replaces the history entry, so Back from the

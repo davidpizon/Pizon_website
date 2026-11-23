@@ -39,6 +39,9 @@ public sealed class BbsSession
     /// <summary>Gets or sets a value indicating whether the call started from a link straight to a screen (no dial-up).</summary>
     public bool DeepLink { get; set; }
 
+    /// <summary>Gets or sets the message being written on the board, kept for the tab so leaving the editor doesn't lose it.</summary>
+    public string? ComposeDraft { get; set; }
+
     /// <summary>Gets a value indicating whether the caller is signed in with a handle (and not acting as a guest).</summary>
     public bool IsMember => Me.Authenticated && Me.Handle is not null && !ActingAsGuest;
 

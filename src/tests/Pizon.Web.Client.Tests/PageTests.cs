@@ -83,6 +83,20 @@ internal sealed partial class PageHarness : IAsyncDisposable
     }
 
     /// <summary>
+    /// Runs the whole BBS loop from a screen (pages already shown with <see cref="Show"/> draw when their
+    /// screen comes up) until the scripted keys run out or the test stops it.
+    /// </summary>
+    /// <param name="start">The first screen.</param>
+    /// <param name="stop">Stops the call (also cancelled when the keys run out).</param>
+    /// <returns>A task that completes when the call ends.</returns>
+    public async Task RunAppAsync(ScreenId start, CancellationTokenSource stop)
+    {
+        ArgumentNullException.ThrowIfNull(stop);
+        H.Terminal.StopWhenEmpty = stop;
+        await Bunit.Renderer.Dispatcher.InvokeAsync(() => H.App().RunAsync(H.Session, start, stop.Token));
+    }
+
+    /// <summary>
     /// Every text slot in the page's art is bound by the page (the cursor slot is where the prompt goes, and
     /// animation slots wait for phase 6).
     /// </summary>
@@ -92,7 +106,7 @@ internal sealed partial class PageHarness : IAsyncDisposable
         where T : class, IComponent
     {
         var screen = page.FindComponent<BbsScreen>().Instance;
-        var expected = screen.Art.Fields.Where(f => f.Kind == SlotKind.Field && f.Name != ScreenArt.CursorName).Select(f => f.Name).Order(StringComparer.Ordinal);
+        var expected = screen.Art.Fields.Where(f => f.Kind is SlotKind.Field or SlotKind.Input && f.Name != ScreenArt.CursorName).Select(f => f.Name).Order(StringComparer.Ordinal);
         Assert.Equal(expected, screen.BoundSlots.Select(f => f.Name).Distinct().Order(StringComparer.Ordinal));
     }
 
@@ -555,8 +569,8 @@ public sealed class PageModelTests
     [Fact]
     public void PagesDeclareAccess()
     {
-        var pages = typeof(BbsPage).Assembly.GetTypes().Where(t => t.IsSubclassOf(typeof(BbsPage))).ToList();
-        Assert.Equal(9, pages.Count);
+        var pages = typeof(BbsPage).Assembly.GetTypes().Where(t => t.IsSubclassOf(typeof(BbsPage)) && !t.IsAbstract).ToList();
+        Assert.Equal(19, pages.Count);
         Assert.All(pages, page =>
         {
             var access = page.GetCustomAttributes(typeof(BbsAccessAttribute), inherit: false).Cast<BbsAccessAttribute>().Single();
@@ -568,12 +582,12 @@ public sealed class PageModelTests
         });
     }
 
-    /// <summary>Every page binds every text slot of its art.</summary>
+    /// <summary>Every page binds every text slot of its art (shown to the SysOp, who may open them all).</summary>
     /// <returns>A task that completes when the test is done.</returns>
     [Fact]
     public async Task PagesBindEverySlot()
     {
-        var h = new Harness();
+        var h = new Harness().Member(sysop: true);
         await using var p = new PageHarness(h);
         Check(p.Show<MainMenuPage>());
         Check(p.Show<BulletinsPage>());
@@ -585,6 +599,16 @@ public sealed class PageModelTests
         Check(p.Show<FileAreaPage>(ps => ps.Add(x => x.Area, "tools")));
         Check(p.Show<DoorsPage>());
         Check(p.Show<UsersPage>());
+        Check(p.Show<SettingsPage>());
+        Check(p.Show<HandlePage>());
+        Check(p.Show<NewUserHandlePage>());
+        Check(p.Show<PageSysopPage>());
+        Check(p.Show<BoardNewPage>());
+        Check(p.Show<BoardReplyPage>());
+        Check(p.Show<SysopPage>());
+        Check(p.Show<SysopQueuePage>());
+        Check(p.Show<SysopPagesPage>());
+        Check(p.Show<SysopDeletePage>());
 
         static void Check<T>(IRenderedComponent<T> page)
             where T : class, IComponent => page.WaitForAssertion(() => PageHarness.AssertAllSlotsBound(page));
@@ -605,6 +629,16 @@ public sealed class PageModelTests
         p.Show<FileAreaPage>(ps => ps.Add(x => x.Area, "tools"));
         p.Show<DoorsPage>();
         p.Show<UsersPage>();
+        p.Show<SettingsPage>();
+        p.Show<HandlePage>();
+        p.Show<NewUserHandlePage>();
+        p.Show<PageSysopPage>();
+        p.Show<BoardNewPage>();
+        p.Show<BoardReplyPage>();
+        p.Show<SysopPage>();
+        p.Show<SysopQueuePage>();
+        p.Show<SysopPagesPage>();
+        p.Show<SysopDeletePage>();
         var top = p.Show<TopPlayersPage>();
         top.WaitForAssertion(() => Assert.NotEmpty(h.Api.Calls));
         Assert.All(h.Api.Calls, c => Assert.StartsWith("scores:", c, StringComparison.Ordinal));

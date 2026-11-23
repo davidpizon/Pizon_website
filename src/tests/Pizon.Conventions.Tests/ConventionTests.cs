@@ -39,7 +39,7 @@ public sealed partial class ConventionTests
         Assert.All(pages, page =>
         {
             var text = File.ReadAllText(page);
-            Assert.Contains("@inherits BbsPage", text, StringComparison.Ordinal);
+            Assert.Matches(@"@inherits \w*(BbsPage|PageBase)\b", text);
             Assert.Contains("@attribute [BbsAccess(", text, StringComparison.Ordinal);
             Assert.Contains("<PageTitle>", text, StringComparison.Ordinal);
         });

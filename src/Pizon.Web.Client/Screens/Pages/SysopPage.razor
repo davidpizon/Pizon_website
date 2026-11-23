@@ -1,0 +1,16 @@
+@page "/sysop"
+@layout BbsLayout
+@inherits BbsPage
+@attribute [BbsAccess(ScreenAccess.Sysop)]
+
+<PageTitle>@RouteTable.Tab("SysOp console")</PageTitle>
+<BbsScreen Art="SysopArt.Instance">
+    @if (Session.IsSysop)
+    {
+        <Hotkey Key="1" Href="/sysop/queue" Label="Moderation queue" />
+        <Hotkey Key="2" Href="/sysop/pages" Label="Pages inbox" />
+        <Hotkey Key="3" Href="/sysop/delete" Label="Delete a message" />
+    }
+    <Hotkey Key="Q" Href="/menu" Label="Back to the main menu" />
+    <Hotkey Key="@DoorKeys.Escape" Href="/menu" />
+</BbsScreen>

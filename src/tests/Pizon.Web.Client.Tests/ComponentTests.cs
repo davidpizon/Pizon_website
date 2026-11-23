@@ -254,7 +254,7 @@ public sealed class ComponentTests : IAsyncDisposable
             .ToList();
         Assert.Equal(
             RouteTable.All.Select(r => r.Path).Order(StringComparer.Ordinal),
-            home.Concat(pages.Where(p => !p.Contains('{', StringComparison.Ordinal) && p.Count(c => c == '/') == 1)).Order(StringComparer.Ordinal));
+            home.Concat(pages.Where(p => !p.Contains('{', StringComparison.Ordinal) && !RouteTable.All.Any(r => r.Nested && p.StartsWith(r.Path + "/", StringComparison.Ordinal)))).Order(StringComparer.Ordinal));
         Assert.All(RouteTable.All, r => Assert.Equal(BbsApp.PageScreens.Contains(r.Screen), pages.Contains(r.Path)));
         Assert.All(pages, p => Assert.True(RouteTable.TryResolve(p.Replace("{Number:int}", "2", StringComparison.Ordinal), out _), p));
     }
@@ -311,8 +311,9 @@ public sealed class RoutedPageTests : IAsyncDisposable
 
     /// <summary>
     /// A link straight to the menu draws it with no dial-up; hotkeys move the address and draw the next page;
-    /// a page under the same screen replaces the last one; Back redraws; an unknown bulletin is not found; and a
-    /// legacy screen (settings) takes the terminal and gives it back.
+    /// a page under the same screen replaces the last one; Back redraws; an unknown bulletin is not found; a
+    /// form page (settings) changes a line in place; and a legacy screen (the RIP card) takes the terminal and
+    /// gives it back.
     /// </summary>
     [Fact]
     public void FollowsTheAddress()
@@ -339,8 +340,13 @@ public sealed class RoutedPageTests : IAsyncDisposable
 
         terminal.OnKey("S");
         Until(() => nav.Uri.EndsWith("/settings", StringComparison.Ordinal) && Count("TERMINAL SETTINGS") == 1);
+        terminal.OnKey("B");
+        Until(() => Count("INSTANT") == 1);
         terminal.OnKey("Q");
         Until(() => nav.Uri.EndsWith("/menu", StringComparison.Ordinal) && Count("MAIN MENU") == 3);
+
+        terminal.OnKey("R");
+        Until(() => nav.Uri.EndsWith("/menu", StringComparison.Ordinal) && Count("MAIN MENU") == 4);
     }
 
     private static void Until(Func<bool> condition)

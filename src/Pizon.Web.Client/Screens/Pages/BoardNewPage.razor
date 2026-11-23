@@ -1,0 +1,23 @@
+@page "/board/new"
+@layout BbsLayout
+@inherits ComposePageBase
+@attribute [BbsAccess(ScreenAccess.Member)]
+
+<PageTitle>@RouteTable.Tab("New message")</PageTitle>
+<BbsScreen Art="BoardComposeArt.Instance" Prompt="@Prompt" OnKey="OnKey">
+    <Field Slot="BoardComposeArt.Title" Value="@("NEW MESSAGE")" />
+    @if (Session.IsMember || Done)
+    {
+        <Field Slot="BoardComposeArt.Info" Value="@Info" />
+        <BbsForm Model="Model" StatusSlot="BoardComposeArt.Status" Status="@Status" Disabled="@Done" OnValidSubmit="PostAsync" OnCancel="Cancel">
+            <DataAnnotationsValidator />
+            <Field Slot="BoardComposeArt.Prompt" Value="@string.Empty" />
+            <Field Slot="BoardComposeArt.Number" Value="@string.Empty" />
+            <BlockEditor Slot="BoardComposeArt.Body" @bind-Value="Model.Body" @bind-Value:after="SaveDraft" MaxLength="Limits.MessageLength" Label="Message" />
+        </BbsForm>
+    }
+    else
+    {
+        <Field Slot="BoardComposeArt.Status" Value="@Ui.AccessDeniedText(Session)" />
+    }
+</BbsScreen>

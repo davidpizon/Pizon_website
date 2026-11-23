@@ -1,0 +1,23 @@
+@page "/board/reply"
+@layout BbsLayout
+@inherits ComposePageBase
+@attribute [BbsAccess(ScreenAccess.Member)]
+
+<PageTitle>@RouteTable.Tab("Reply to a message")</PageTitle>
+<BbsScreen Art="BoardComposeArt.Instance" Prompt="@Prompt" OnKey="OnKey">
+    <Field Slot="BoardComposeArt.Title" Value="@("REPLY TO A MESSAGE")" />
+    @if (Session.IsMember || Done)
+    {
+        <Field Slot="BoardComposeArt.Info" Value="@Info" />
+        <BbsForm Model="Model" StatusSlot="BoardComposeArt.Status" Status="@Status" Disabled="@Done" OnValidSubmit="PostAsync" OnCancel="Cancel">
+            <DataAnnotationsValidator />
+            <Field Slot="BoardComposeArt.Prompt" Value="@("Reply to message #:")" />
+            <InputField Slot="BoardComposeArt.Number" @bind-Value="Model.Number" MaxLength="9" Label="Reply to message number" />
+            <BlockEditor Slot="BoardComposeArt.Body" @bind-Value="Model.Body" @bind-Value:after="SaveDraft" MaxLength="Limits.MessageLength" Label="Message" />
+        </BbsForm>
+    }
+    else
+    {
+        <Field Slot="BoardComposeArt.Status" Value="@Ui.AccessDeniedText(Session)" />
+    }
+</BbsScreen>

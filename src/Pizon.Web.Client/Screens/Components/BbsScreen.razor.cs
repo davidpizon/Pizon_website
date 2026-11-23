@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using Pizon.Doors.Sdk;
 using Pizon.Doors.Sdk.Text;
 using Pizon.Web.Client.Screens.Hosting;
 using Pizon.Web.Client.Screens.Rendering;
@@ -7,8 +8,9 @@ using Pizon.Web.Client.Terminal;
 namespace Pizon.Web.Client.Screens.Components;
 
 /// <summary>
-/// One screen of a page: compiled art plus the values, lists and hotkeys bound to it by its child
-/// <see cref="Field"/>, <see cref="List"/> and <see cref="Hotkey"/> components. It writes nothing to the
+/// One screen of a page: compiled art plus the values, lists, inputs and hotkeys bound to it by its child
+/// <see cref="Field"/>, <see cref="List"/>, <see cref="InputField"/>, <see cref="BlockEditor"/> and
+/// <see cref="Hotkey"/> components. While an input has the cursor, keys go to it before any hotkey. It writes nothing to the
 /// HTML page except a hidden mirror for screen readers (<see cref="ScreenMirror"/>); <see cref="BbsHost"/>
 /// draws it in the terminal as finished ANSI, and when a bound value changes while it is on screen it sends
 /// just that slot, the way Razor re-renders only what changed.
@@ -18,6 +20,7 @@ public sealed partial class BbsScreen : IDisposable
     private readonly Dictionary<FieldSlot, string> values = [];
     private readonly List<Hotkey> hotkeys = [];
     private readonly List<List> lists = [];
+    private readonly List<TextInput> inputs = [];
     private readonly HashSet<object> changedWhileHidden = [];
     private readonly Queue<List> lastPages = new();
     private ScreenView? view;
@@ -77,9 +80,16 @@ public sealed partial class BbsScreen : IDisposable
     /// <summary>Gets the lists.</summary>
     internal IReadOnlyList<List> Lists => lists;
 
+    /// <summary>Gets the inputs, in the order they were declared.</summary>
+    internal IReadOnlyList<TextInput> Inputs => inputs;
+
+    /// <summary>Gets the input that has the cursor, if any.</summary>
+    internal TextInput? Active { get; private set; }
+
     /// <summary>Gets every slot something is bound to: fields, lists and their "more" slots.</summary>
     internal IEnumerable<FieldSlot> BoundSlots =>
-        values.Keys.Concat(lists.Select(l => l.Slot)).Concat(lists.Where(l => l.More is not null).Select(l => l.More!));
+        values.Keys.Concat(lists.Select(l => l.Slot)).Concat(lists.Where(l => l.More is not null).Select(l => l.More!))
+            .Concat(inputs.Select(i => i.Slot));
 
     /// <summary>Gets the hotkeys, in the order they were declared.</summary>
     internal IReadOnlyList<Hotkey> Hotkeys => hotkeys;
@@ -147,6 +157,11 @@ public sealed partial class BbsScreen : IDisposable
             Bind(list);
         }
 
+        foreach (var input in inputs.Where(i => Art.Fields.Contains(i.Slot)))
+        {
+            view.SetLines(input.Slot, input.Box.Lines.Select(PipeCodes.Escape));
+        }
+
         shownPrompt = Prompt ?? string.Empty;
         return view.Render() + PromptAnsi();
     }
@@ -169,10 +184,14 @@ public sealed partial class BbsScreen : IDisposable
                 case List list:
                     PaintList(list);
                     break;
+                case TextInput input:
+                    WriteInput(input, input.Box.Render());
+                    break;
             }
         }
 
         changedWhileHidden.Clear();
+        InputsChanged();
         if (shownPrompt != (Prompt ?? string.Empty))
         {
             PaintPrompt();
@@ -221,6 +240,21 @@ public sealed partial class BbsScreen : IDisposable
     /// <returns>A task that completes when the key is handled.</returns>
     internal async Task HandleKeyAsync(string key, CancellationToken cancellationToken)
     {
+        if (Active is { } input)
+        {
+            if (key != DoorKeys.Escape)
+            {
+                await input.HandleKeyAsync(key);
+                return;
+            }
+
+            if (input.Form is { Cancels: true } form)
+            {
+                await form.CancelAsync();
+                return;
+            }
+        }
+
         if (hotkeys.FirstOrDefault(h => h.Matches(key)) is { } hotkey)
         {
             await PressAsync(hotkey, key, cancellationToken);
@@ -289,6 +323,72 @@ public sealed partial class BbsScreen : IDisposable
     /// <summary>Removes a list.</summary>
     /// <param name="list">The list.</param>
     internal void RemoveList(List list) => lists.Remove(list);
+
+    /// <summary>Registers an input.</summary>
+    /// <param name="input">The input.</param>
+    internal void AddInput(TextInput input)
+    {
+        inputs.Add(input);
+        if (IsLive)
+        {
+            InputsChanged();
+        }
+    }
+
+    /// <summary>Removes an input.</summary>
+    /// <param name="input">The input.</param>
+    internal void RemoveInput(TextInput input)
+    {
+        inputs.Remove(input);
+        if (Active == input)
+        {
+            Active = null;
+            InputsChanged();
+        }
+    }
+
+    /// <summary>
+    /// Sends an edit of an input to the terminal (when the screen is showing) and leaves the cursor where
+    /// typing goes on.
+    /// </summary>
+    /// <param name="input">The input.</param>
+    /// <param name="ansi">The edit, from its <see cref="TextBox"/>.</param>
+    internal void WriteInput(TextInput input, string ansi)
+    {
+        if (view is not null && view.Art.Fields.Contains(input.Slot))
+        {
+            Changed(input, () => Host.Write(ansi + Home()));
+        }
+    }
+
+    /// <summary>
+    /// Gives an input the cursor (or takes it away from all of them).
+    /// </summary>
+    /// <param name="input">The input, or <see langword="null"/>.</param>
+    internal void Focus(TextInput? input)
+    {
+        Active = input is { Enabled: true } && inputs.Contains(input) ? input : null;
+        if (IsLive && view is not null)
+        {
+            Host.SetLineMode(Active is not null);
+            Host.Write(Home());
+        }
+    }
+
+    /// <summary>
+    /// Checks which input should have the cursor after inputs came, went, or were switched on or off: the
+    /// one that has it keeps it while it can take keys; otherwise the first input that can.
+    /// </summary>
+    internal void InputsChanged()
+    {
+        if (Active is { Enabled: true } active && inputs.Contains(active))
+        {
+            Focus(active);
+            return;
+        }
+
+        Focus(inputs.FirstOrDefault(i => i.Enabled && (view is null || view.Art.Fields.Contains(i.Slot))));
+    }
 
     /// <summary>Registers a hotkey.</summary>
     /// <param name="hotkey">The hotkey.</param>
@@ -410,7 +510,10 @@ public sealed partial class BbsScreen : IDisposable
         Host.Write(erase + PromptAnsi());
     }
 
-    private string PromptAnsi() => shownPrompt.Length == 0 ? view!.CursorHome() : view!.CursorHome() + PipeCodes.ToAnsi(shownPrompt);
+    private string PromptAnsi() =>
+        (shownPrompt.Length == 0 ? view!.CursorHome() : view!.CursorHome() + PipeCodes.ToAnsi(shownPrompt)) + (Active is null ? string.Empty : Home());
+
+    private string Home() => Active is { } input && view!.Art.Fields.Contains(input.Slot) ? input.Box.Caret : view!.CursorHome();
 
     private void QueueIfLastPage(List list)
     {

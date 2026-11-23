@@ -7,6 +7,10 @@
             <p>@text</p>
         }
     }
+    @foreach (var input in Screen.Inputs)
+    {
+        <p>@(input.Label ?? input.Slot.Name): @input.Box.Text</p>
+    }
     @foreach (var list in Screen.Lists)
     {
         <ul>

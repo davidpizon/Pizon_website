@@ -101,7 +101,36 @@ public interface ITerminal
     /// <summary>Gets the caller's local date.</summary>
     /// <returns>Today in the browser's time zone.</returns>
     Task<DateOnly> GetLocalDateAsync();
+
+    /// <summary>
+    /// Starts an animation playing in a box of the screen, behind whatever the page does: it doesn't wait in
+    /// line with writes, and keys go to the page, not to the animation. Starting a slot that is already playing
+    /// replaces it. Clearing the screen stops every slot. With reduced motion, only the first frame shows.
+    /// </summary>
+    /// <param name="name">The slot's name (one animation per name).</param>
+    /// <param name="animation">The frames and the box.</param>
+    /// <returns>A task that completes when it has started.</returns>
+    Task StartSlotAsync(string name, SlotAnimation animation);
+
+    /// <summary>Stops a slot's animation, leaving its current frame on screen.</summary>
+    /// <param name="name">The slot's name.</param>
+    /// <returns>A task that completes when it has stopped.</returns>
+    Task StopSlotAsync(string name);
 }
+
+/// <summary>
+/// An animation for a slot of the screen (see <see cref="ITerminal.StartSlotAsync"/>): finished ANSI frames,
+/// each drawn from the top left of the box.
+/// </summary>
+/// <param name="Row">The box's top row (1-based).</param>
+/// <param name="Column">The box's left column (1-based).</param>
+/// <param name="Width">The box's width.</param>
+/// <param name="Height">The box's height.</param>
+/// <param name="Frames">The frames' ANSI, positioned within the box.</param>
+/// <param name="Delays">How long each frame shows, in milliseconds.</param>
+/// <param name="Loop">Whether it starts again after the last frame (otherwise it rests on the last).</param>
+/// <param name="MaxDuration">How long it plays before resting on its first frame, if limited.</param>
+public sealed record SlotAnimation(int Row, int Column, int Width, int Height, IReadOnlyList<string> Frames, IReadOnlyList<int> Delays, bool Loop = true, TimeSpan? MaxDuration = null);
 
 /// <summary>
 /// The character-cell transition effects (names match <c>transitions.js</c>).

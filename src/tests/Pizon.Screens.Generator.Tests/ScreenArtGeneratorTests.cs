@@ -22,9 +22,12 @@ public sealed class ScreenArtGeneratorTests : IDisposable
             public enum SlotKind { Field, Input, Animation }
             public sealed record FieldSlot(string Name, SlotKind Kind, int Row, int Column, int Width, int Height, byte Foreground, byte Background, Pizon.Doors.Sdk.Text.TextAlign Align);
             public sealed record HotspotSlot(string Key, int Row, int Column, int Width);
+            public readonly record struct FrameRange(int First, int Last);
+            public sealed class ArtFrame { public ArtFrame(string cells, byte[] foreground, byte[] background, int delayMs) { } }
+            public sealed record ArtAnimation(System.Collections.Generic.IReadOnlyList<ArtFrame> Frames, System.Collections.Generic.IReadOnlyDictionary<string, FrameRange> Ranges);
             public abstract class ScreenArt
             {
-                protected ScreenArt(string name, int columns, int rows, string cells, byte[] foreground, byte[] background, System.Collections.Generic.IReadOnlyList<FieldSlot> fields, System.Collections.Generic.IReadOnlyList<HotspotSlot> hotspots) { }
+                protected ScreenArt(string name, int columns, int rows, string cells, byte[] foreground, byte[] background, System.Collections.Generic.IReadOnlyList<FieldSlot> fields, System.Collections.Generic.IReadOnlyList<HotspotSlot> hotspots, ArtAnimation? animation = null) { }
             }
         }
         """;
@@ -130,7 +133,86 @@ public sealed class ScreenArtGeneratorTests : IDisposable
         Assert.Equal(["PZN001"], Ids(Run(Write("nocontents.dur", "{\"DurMovie\":{\"formatVersion\":8,\"colorFormat\":\"256\",\"columns\":1,\"lines\":1,\"frames\":[{}]}}"))));
         Assert.Equal(["PZN002"], Ids(Run(Write("sixteen.dur", "{\"DurMovie\":{\"formatVersion\":8,\"colorFormat\":\"16\"}}"))));
         Assert.Equal(["PZN006"], Ids(Run(Art("wide.dur", ["x"], columns: 81))));
-        Assert.Equal(["PZN007"], Ids(Run(Art("anim.dur", ["x"], frames: 2))));
+        Assert.Equal(["PZN001"], Ids(Run(Write("badframe.dur", "{\"DurMovie\":{\"formatVersion\":8,\"colorFormat\":\"256\",\"columns\":1,\"lines\":1,\"frames\":[1]}}"))));
+    }
+
+    /// <summary>
+    /// Art with several frames compiles to frame data with each frame's delay (its own, or one frame at the
+    /// movie's rate, kept between 33 ms and 5 s), and its sidecar's ranges become typed constants.
+    /// </summary>
+    [Fact]
+    public void CompilesAnimatedArtAndRanges()
+    {
+        var art = Write("sysop-cam.dur", "{\"DurMovie\":{\"formatVersion\":8,\"colorFormat\":\"256\",\"columns\":2,\"lines\":1,\"framerate\":4,\"frames\":["
+            + "{\"delay\":0,\"contents\":[\"ab\"]},{\"delay\":0.001,\"contents\":[\"cd\"]},{\"delay\":60,\"contents\":[\"ef\"]},{\"delay\":0.5,\"contents\":[\"gh\"]}]}}");
+        var sidecar = Write("sysop-cam.anim.json", "{ \"ranges\": { \"idle\": [0, 1], \"very-busy\": [2, 3] } }");
+        var (sources, diagnostics) = Run(art, sidecar);
+        Assert.Empty(diagnostics);
+        var source = Assert.Single(sources);
+        Assert.Contains("new(CellText, ForegroundColors, BackgroundColors, 250),", source, StringComparison.Ordinal);
+        Assert.Contains("new(Frame2Text, [7,7], [0,0], 33),", source, StringComparison.Ordinal);
+        Assert.Contains("new(Frame3Text, [7,7], [0,0], 5000),", source, StringComparison.Ordinal);
+        Assert.Contains("new(Frame4Text, [7,7], [0,0], 500),", source, StringComparison.Ordinal);
+        Assert.Contains("private const string Frame4Text =\n        \"gh\";", source.ReplaceLineEndings("\n"), StringComparison.Ordinal);
+        Assert.Contains("{ [\"idle\"] = new(0, 1), [\"very-busy\"] = new(2, 3) }", source, StringComparison.Ordinal);
+        Assert.Contains("public const string VeryBusy = \"very-busy\";", source, StringComparison.Ordinal);
+        AssertCompiles(source);
+
+        var (plain, none) = Run(Art("loop.dur", ["x"], frames: 2));
+        Assert.Empty(none);
+        Assert.Contains("FrameRange> { })", Assert.Single(plain), StringComparison.Ordinal);
+        Assert.DoesNotContain("class Ranges", plain[0], StringComparison.Ordinal);
+        AssertCompiles(plain[0]);
+    }
+
+    /// <summary>Animations that can't be played, and broken sidecars, fail the build with PZN007.</summary>
+    /// <param name="sidecar">The sidecar's text, or null for none.</param>
+    /// <param name="frames">How many frames the art has.</param>
+    /// <param name="row">The art's one row.</param>
+    [Theory]
+    [InlineData(null, 241, "x")]
+    [InlineData(null, 2, "@TAG@")]
+    [InlineData(null, 2, "@[1] go@")]
+    [InlineData(null, 2, "@OPEN no close")]
+    [InlineData("{}", 1, "x")]
+    [InlineData("not json", 2, "x")]
+    [InlineData("[]", 2, "x")]
+    [InlineData("{\"loop\": true}", 2, "x")]
+    [InlineData("{\"ranges\": []}", 2, "x")]
+    [InlineData("{\"ranges\": {\"Idle\": [0, 1]}}", 2, "x")]
+    [InlineData("{\"ranges\": {\"\": [0, 1]}}", 2, "x")]
+    [InlineData("{\"ranges\": {\"idle!\": [0, 1]}}", 2, "x")]
+    [InlineData("{\"ranges\": {\"idle\": [1, 0]}}", 2, "x")]
+    [InlineData("{\"ranges\": {\"idle\": [0, 2]}}", 2, "x")]
+    [InlineData("{\"ranges\": {\"idle\": [-1, 0]}}", 2, "x")]
+    [InlineData("{\"ranges\": {\"idle\": [0.5, 1]}}", 2, "x")]
+    [InlineData("{\"ranges\": {\"idle\": [0, 1.5]}}", 2, "x")]
+    [InlineData("{\"ranges\": {\"idle\": [\"a\", 1]}}", 2, "x")]
+    [InlineData("{\"ranges\": {\"idle\": [0, \"b\"]}}", 2, "x")]
+    [InlineData("{\"ranges\": {\"idle\": [0]}}", 2, "x")]
+    [InlineData("{\"ranges\": {\"idle\": 1}}", 2, "x")]
+    [InlineData("{\"ranges\": {\"a-b\": [0, 0], \"a_b\": [1, 1]}}", 2, "x")]
+    public void ReportsBadAnimations(string? sidecar, int frames, string row)
+    {
+        var paths = new List<string> { Art("anim.dur", [row], frames: frames) };
+        if (sidecar is not null)
+        {
+            paths.Add(Write("anim.anim.json", sidecar));
+        }
+
+        var (sources, diagnostics) = Run([.. paths]);
+        Assert.Empty(sources);
+        Assert.Equal("PZN007", Assert.Single(diagnostics).Id);
+    }
+
+    /// <summary>A sidecar with no ranges is allowed, and one belongs only to the art file with its name.</summary>
+    [Fact]
+    public void MatchesSidecarsByName()
+    {
+        var (sources, diagnostics) = Run(Art("anim.dur", ["x"], frames: 2), Write("anim.anim.json", "{ \"ranges\": null }"), Write("other.anim.json", "{ \"ranges\": {\"x\": [0, 9]} }"));
+        Assert.Empty(diagnostics);
+        Assert.Single(sources);
+        Assert.Null(ScreenArtGenerator.SidecarFor(Path.Combine(folder, "anim.dur"), []));
     }
 
     /// <summary>Durdraw's foreground numbering is mapped to the PIZON palette.</summary>
@@ -239,6 +321,7 @@ public sealed class ScreenArtGeneratorTests : IDisposable
         public override string Path { get; } = path;
 
         /// <inheritdoc/>
-        public override SourceText? GetText(CancellationToken cancellationToken = default) => null;
+        public override SourceText? GetText(CancellationToken cancellationToken = default) =>
+            Path.EndsWith(".json", StringComparison.Ordinal) && File.Exists(Path) ? SourceText.From(File.ReadAllText(Path)) : null;
     }
 }

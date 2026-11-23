@@ -322,6 +322,43 @@ test("blit copies a box into the screen without spilling over the edge", () => {
   assert.equal(terminal.paletteCss().split(".f").length, 257);
 });
 
+test("animation slots play beside the queue, let keys through and stop when the screen clears", async () => {
+  const { t, clock, keys } = rig();
+  t.startSlot("cam", { row: 1, col: 2, width: 2, height: 1, frames: ["ab", "cd"], delays: [100, 100] });
+  clock.pump(16, 1);
+  assert.equal(t.snapshot()[1], "  ab");
+  clock.pump(100, 1);
+  assert.equal(t.snapshot()[1], "  cd");
+  t.onKey("k");
+  assert.deepEqual(keys, ["k"]);
+  assert.equal(t.slots.active, true);
+
+  const write = t.write("Hi");
+  clock.pump(16, 2);
+  await write;
+  assert.equal(t.snapshot()[0], "Hi");
+  assert.equal(t.slots.active, true);
+
+  t.setBaud(2400);
+  const wipe = t.transition("wipe", "[1;1HYo");
+  clock.pump(100, 1);
+  assert.equal(t.active?.kind, "transition");
+  clock.pump(100, 20);
+  await wipe;
+
+  t.stopSlot("cam");
+  assert.equal(clock.pump(16, 5), 1);
+  assert.equal(clock.pump(16, 5), 0);
+
+  t.startSlot("cam", { width: 1, height: 1, frames: ["z"] });
+  clock.pump(16, 1);
+  const cls = t.write("[2J");
+  clock.pump(16, 5);
+  await cls;
+  assert.equal(t.slots.active, false);
+  assert.equal(clock.pump(16, 5), 0);
+});
+
 test("module exports drive the page terminal and fall back safely", async (t) => {
   terminal.setCurrentForTests(null);
   assert.throws(() => terminal.setBaud(0), /not initialized/);
@@ -360,6 +397,10 @@ test("module exports drive the page terminal and fall back safely", async (t) =>
   assert.ok(terminal.playHandshake() > 0);
   terminal.stopAudio();
   terminal.beep();
+  terminal.startSlot("cam", { width: 1, height: 1, frames: ["c"] });
+  clock.pump(16, 1);
+  terminal.stopSlot("cam");
+  clock.pump();
   assert.equal(terminal.prefersReducedMotion(), false);
   doc.dispatch("keydown", { key: "k" });
   assert.deepEqual(calls, [["OnSkip"], ["OnKey", "k"]]);

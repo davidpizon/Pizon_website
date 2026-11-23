@@ -38,8 +38,8 @@ public sealed class Bulletin
     /// <summary>Gets the body lines (pipe codes allowed).</summary>
     public IReadOnlyList<string> Lines { get; init; } = [];
 
-    /// <summary>Gets the optional ANSImation shown beside the text (e.g. the SysOp cam).</summary>
-    public string? Animation { get; init; }
+    /// <summary>Gets a value indicating whether the SysOp cam plays beside the text.</summary>
+    public bool Cam { get; init; }
 }
 
 /// <summary>

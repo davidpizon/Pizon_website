@@ -14,9 +14,13 @@ else if (bulletin is null)
 else
 {
     <PageTitle>@RouteTable.Tab($"Bulletin #{Number}")</PageTitle>
-    <BbsScreen @key="Number" @ref="screen" Art="@Art" Prompt="@prompt" OnKey="@(_ => Host.Navigate("/bulletins"))" OnDrawn="ShowCamAsync">
+    <BbsScreen @key="Number" Art="@Art" Prompt="@prompt" OnKey="@(_ => Host.Navigate("/bulletins"))">
         <Field Slot="@(Cam ? BulletinCamArt.Title : BulletinArt.Title)" Value="@($"BULLETIN #{Number}: {bulletin.Title.ToUpperInvariant()}")" />
-        <List Slot="@Body" Items="lines" More="@(Cam ? BulletinCamArt.More : BulletinArt.More)" OnLastPage="LastPageAsync" />
+        <List Slot="@Body" Items="lines" More="@(Cam ? BulletinCamArt.More : BulletinArt.More)" OnLastPage="LastPage" />
+        @if (Cam)
+        {
+            <Slot Art="SysopCamArt.Instance" At="BulletinCamArt.Cam" Range="@CamRange(Presence.Online)" />
+        }
         <Hotkey Key="Q" Href="/bulletins" Label="Back to the bulletins" />
         <Hotkey Key="@DoorKeys.Escape" Href="/bulletins" />
     </BbsScreen>

@@ -84,6 +84,9 @@ public sealed class JsTerminalTests : IAsyncDisposable
         await t.OpenUrlAsync(new Uri("https://example.com"));
         await t.SetAsync("k", "v");
         await t.DelayAsync(TimeSpan.FromMilliseconds(1));
+        await t.StartSlotAsync("CAM", new SlotAnimation(5, 54, 24, 12, ["a"], [125]));
+        await t.StartSlotAsync("CAM", new SlotAnimation(1, 1, 1, 1, ["a"], [125], Loop: false, MaxDuration: TimeSpan.FromSeconds(2)));
+        await t.StopSlotAsync("CAM");
 
         Assert.Equal(TimeSpan.FromSeconds(2.5), await t.PlayHandshakeAsync());
         Assert.Equal("ART", await t.LoadArtAsync("a.ans"));
@@ -101,6 +104,12 @@ public sealed class JsTerminalTests : IAsyncDisposable
         var options = (Dictionary<string, object?>)module.Invocations["playAnimationUrl"][1].Arguments[1]!;
         Assert.Equal(3, options["width"]);
         Assert.False(options.ContainsKey("maxMs"));
+        var slot = (Dictionary<string, object?>)module.Invocations["startSlot"][0].Arguments[1]!;
+        Assert.Equal("CAM", module.Invocations["startSlot"][0].Arguments[0]);
+        Assert.Equal((4, 53, 24, 12, true), ((int)slot["row"]!, (int)slot["col"]!, (int)slot["width"]!, (int)slot["height"]!, (bool)slot["loop"]!));
+        Assert.False(slot.ContainsKey("maxMs"));
+        Assert.Equal(2000d, ((Dictionary<string, object?>)module.Invocations["startSlot"][1].Arguments[1]!)["maxMs"]);
+        Assert.Equal("CAM", module.Invocations["stopSlot"][0].Arguments[0]);
     }
 
     /// <summary>Keys queue up, time out, and can be discarded; skips end waits early.</summary>

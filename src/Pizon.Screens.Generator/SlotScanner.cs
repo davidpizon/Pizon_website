@@ -102,7 +102,7 @@ internal static class SlotScanner
     private static readonly HashSet<string> Reserved = new(StringComparer.Ordinal)
     {
         "Instance", "Fields", "Hotspots", "Columns", "Rows", "Name", "Text", "Field", "CharAt", "ForegroundAt",
-        "BackgroundAt", "CursorSlot", "CursorName", "Equals", "GetHashCode", "GetType", "ToString", "MemberwiseClone",
+        "BackgroundAt", "CursorSlot", "CursorName", "Frames", "FrameAnsi", "FrameRanges", "Range", "IsAnimated", "Ranges", "Equals", "GetHashCode", "GetType", "ToString", "MemberwiseClone",
         "Finalize", "ReferenceEquals",
     };
 
@@ -141,6 +141,22 @@ internal static class SlotScanner
 
         return sb.ToString();
     }
+
+    /// <summary>
+    /// Checks a range name from an animation's sidecar: lowercase letters, digits, <c>-</c> and <c>_</c>,
+    /// starting with a letter.
+    /// </summary>
+    /// <param name="name">The name.</param>
+    /// <returns><see langword="true"/> when it can be used.</returns>
+    public static bool IsRangeName(string name) =>
+        name.Length > 0 && name[0] is >= 'a' and <= 'z' && name.All(c => c is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-' or '_');
+
+    /// <summary>
+    /// Turns a range name into a C# constant name: <c>idle</c> becomes <c>Idle</c>, <c>very-busy</c> becomes <c>VeryBusy</c>.
+    /// </summary>
+    /// <param name="name">The range name.</param>
+    /// <returns>The constant name.</returns>
+    public static string RangeName(string name) => PropertyName(name.Replace('-', '_').ToUpperInvariant());
 
     private static int ScanAt(ArtGrid grid, int row, int column, ScanResult result)
     {

@@ -39,8 +39,9 @@ Visitor text (messages, handles) is always escaped, so visitors can't use pipe c
 ## Bulletins (`bulletins.json`)
 
 Each bulletin has a `number`, `title`, optional `updated` date, `lines` (pipe-code text, up to 76
-columns, or 50 when it has an animation) and an optional `animation`. Bulletin #2 uses
-`content/anim/sysopcam.json`, which plays in a 24×12 box to the right of the text.
+columns, or 50 beside the cam) and an optional `"cam": true`. Bulletin #2 sets it: the SysOp cam
+(compiled art, see [Animated art](#animated-art)) plays in a 24×12 box to the right of the text while
+you read, with its busy frames when other callers are online.
 
 ## File areas (`files.json`)
 
@@ -78,7 +79,7 @@ Placeholders are typed straight into the art, one row at a time:
 | `@NAME....@` | A field the whole token wide. Its value uses the color of the cell after the first `@`. Fill with `.` to align left, `>` right, `=` centered. |
 | `@?NAME...@` | A field the caller types into. |
 | `@^.......@` | Makes the slot directly above one row taller (same column and width), for blocks of text and lists. |
-| `@ANIM:NAME@` | A box an animation plays in (the SysOp cam on bulletin #2). |
+| `@ANIM:NAME@` | A box animated art plays in, through a `<Slot>` (the SysOp cam on bulletin #2). |
 | `@[K] label@` | A hotspot: clicking the label sends key `K` (a key, or a name such as `Enter`). The label stays where it is drawn; only the two `@` cells turn blank. |
 | `@CURSOR@` | Where the cursor rests after drawing; prompts and typed text appear there. |
 
@@ -86,6 +87,33 @@ Names are capitals, digits and `_`, starting with a letter. An `@` followed by a
 capital, `?`, `^` or `[` is an ordinary character. Values bound into a field are laid out by `TextLayout`:
 one-line fields are cut with `...`, taller ones word-wrap within their box, and colors and links carry
 across wrapped lines, so text never spills into the art.
+
+### Animated art
+
+A `.dur` with more than one frame compiles to animated art: the generated class has every frame (each
+shows for its own Durdraw delay, or one frame at the movie's rate when that is 0, kept between 33 ms and
+5 s) and is played in an `@ANIM:NAME@` slot of a screen with `<Slot>`:
+
+```razor
+<Slot Art="SysopCamArt.Instance" At="BulletinCamArt.Cam" Range="@SysopCamArt.Ranges.Busy" />
+```
+
+- **No placeholders in animated art.** It is a picture that plays inside still art, which holds the
+  fields.
+- **Ranges.** An optional sidecar next to the art, `<name>.anim.json`, names runs of frames (first and
+  last, counting from 0). Each becomes a constant (`SysopCamArt.Ranges.Busy`), so a misspelled range
+  fails the build. A page picks one from its data; changing it restarts the slot.
+
+  ```json
+  { "ranges": { "idle": [0, 7], "busy": [8, 15] } }
+  ```
+
+- **It plays behind the page.** The slot starts once the screen is drawn and keeps going while the caller
+  reads, types or presses hotkeys; keys never stop it. `Loop` (default on) and `MaxDuration` are
+  parameters of `<Slot>`. Leaving the screen, or anything that clears it, stops it. With reduced motion,
+  only the first frame shows.
+- **The SysOp cam** (`sysop-cam.dur`, 24×12, 16 frames) is a stand-in drawn by `make-screen-art.mjs`
+  (`TODO-SYSOP`: draw the real one in Durdraw and save it over the file).
 
 ### Screen compiler errors
 
@@ -99,7 +127,7 @@ Problems in the art fail the build, like a mistake in a Razor file:
 | `PZN004` | A `@^@` continuation with no slot of the same column and width directly above it. |
 | `PZN005` | Two placeholders with the same name in one file. |
 | `PZN006` | The art is larger than the 80x25 terminal. |
-| `PZN007` | The art has more than one frame (animated art isn't supported yet). |
+| `PZN007` | A bad animation: more than 240 frames, a placeholder (`@`) in animated art, or a broken `.anim.json` (not JSON, an unknown setting, a bad range name or bounds, or a sidecar for one-frame art). |
 | `PZN008` | The name clashes with a member of the art class (for example `NAME`, `TEXT`, `INSTANCE`). |
 
 ## Terminal glow
@@ -120,12 +148,13 @@ The soft phosphor glow around each character is set in `src/Pizon.Web/appsetting
 
 ## Animations (`anim/`)
 
-Every spot works without its file; add one to turn it on.
+These play full screen (or in a door), one at a time, and a key stops them. Animated art inside a screen
+is compiled instead (see [Animated art](#animated-art)). Every spot works without its file; add one to
+turn it on.
 
 | File | Where it plays |
 |---|---|
 | `anim/sting.json` | Full screen right after `CONNECT 14400`, before the banner. |
-| `anim/sysopcam.json` | The SysOp cam box in bulletin #2 (loops, max 20 s). |
 | `_content/Pizon.Doors.<Name>/anim/…` | A door's intro (see [doors.md](doors.md)). |
 
 Two formats are accepted:

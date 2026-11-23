@@ -2,50 +2,54 @@ using Microsoft.AspNetCore.Components;
 using Pizon.Doors.Sdk.Text;
 using Pizon.Web.Client.Content;
 using Pizon.Web.Client.Screens.Art;
-using Pizon.Web.Client.Screens.Components;
 using Pizon.Web.Client.Screens.Rendering;
-using Pizon.Web.Client.Terminal;
+using Pizon.Web.Client.Services;
 
 namespace Pizon.Web.Client.Screens.Pages;
 
 /// <summary>
-/// One bulletin (<c>/bulletins/{n}</c>), a page at a time. A bulletin with an animation (the SysOp cam) uses
-/// the cam art: the cam shows its first frame as the bulletin draws and plays once the last page is showing.
-/// An unknown number shows "file not found".
+/// One bulletin (<c>/bulletins/{n}</c>), a page at a time. A bulletin with the SysOp cam uses the cam art,
+/// whose <c>@ANIM:CAM@</c> slot plays <see cref="SysopCamArt"/> while you read: its idle frames, or its busy
+/// ones while other callers are online. An unknown number shows "file not found".
 /// </summary>
 public sealed partial class BulletinPage
 {
-    /// <summary>The cam's box: the cam art's <c>@ANIM:CAM@</c> slot.</summary>
-    public static readonly AnimationOptions CamBox = new(
-        Row: BulletinCamArt.Cam.Row,
-        Column: BulletinCamArt.Cam.Column,
-        Width: BulletinCamArt.Cam.Width,
-        Height: BulletinCamArt.Cam.Height,
-        Loop: true,
-        MaxDuration: TimeSpan.FromSeconds(20));
-
-    /// <summary>The prompt while the cam plays.</summary>
-    public const string CamLive = "|08(the SysOp cam is live - any key stops it)|07";
-
     private bool loaded;
     private Bulletin? bulletin;
     private IReadOnlyList<string> lines = [];
     private string? prompt;
-    private BbsScreen? screen;
 
     /// <summary>Gets or sets the content store.</summary>
     [Inject]
     public required ContentStore Content { get; set; }
 
+    /// <summary>Gets or sets who else is online (the cam looks busy when anyone is).</summary>
+    [Inject]
+    public required IPresence Presence { get; set; }
+
     /// <summary>Gets or sets the bulletin number from the address.</summary>
     [Parameter]
     public int Number { get; set; }
 
-    private bool Cam => bulletin?.Animation is not null;
+    /// <summary>
+    /// Picks the cam's frames: busy while anyone else is online, idle otherwise.
+    /// </summary>
+    /// <param name="online">How many callers are online, this one included.</param>
+    /// <returns>A range of <see cref="SysopCamArt"/>.</returns>
+    public static string CamRange(int online) => online > 1 ? SysopCamArt.Ranges.Busy : SysopCamArt.Ranges.Idle;
+
+    private bool Cam => bulletin?.Cam == true;
 
     private ScreenArt Art => Cam ? BulletinCamArt.Instance : BulletinArt.Instance;
 
     private FieldSlot Body => Cam ? BulletinCamArt.Body : BulletinArt.Body;
+
+    /// <inheritdoc />
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+        Presence.Changed += OnPresenceChanged;
+    }
 
     /// <inheritdoc />
     protected override async Task OnParametersSetAsync()
@@ -57,23 +61,18 @@ public sealed partial class BulletinPage
         loaded = true;
     }
 
-    private async Task ShowCamAsync()
+    /// <inheritdoc />
+    protected override void Dispose(bool disposing)
     {
-        if (bulletin?.Animation is { } animation)
+        if (disposing)
         {
-            await Host.Terminal.PlayAnimationAsync(animation, CamBox with { MaxDuration = TimeSpan.FromMilliseconds(1) }, Host.PageToken);
-        }
-    }
-
-    private async Task LastPageAsync()
-    {
-        if (bulletin?.Animation is { } animation)
-        {
-            prompt = CamLive;
-            screen?.ShowPrompt(CamLive);
-            await Host.Terminal.PlayAnimationAsync(animation, CamBox, Host.PageToken);
+            Presence.Changed -= OnPresenceChanged;
         }
 
-        prompt = Ui.AnyKey;
+        base.Dispose(disposing);
     }
+
+    private void OnPresenceChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void LastPage() => prompt = Ui.AnyKey;
 }

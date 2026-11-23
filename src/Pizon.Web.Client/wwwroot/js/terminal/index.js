@@ -1,6 +1,7 @@
 /**
  * The PIZON BBS terminal: ties the ANSI parser, cell buffer, renderer, pacing, transitions,
- * ANSImation player, RIP panel, input and audio together, and exposes them to .NET interop.
+ * ANSImation player, background animation slots, RIP panel, input and audio together, and exposes them to
+ * .NET interop.
  * @module terminal
  */
 
@@ -10,6 +11,7 @@ import { DomRenderer } from "./dom-renderer.js";
 import { Pacer } from "./pacing.js";
 import { plan, DURATIONS, EFFECTS, mulberry32 } from "./transitions.js";
 import { parseAnimation, frameAt } from "./ansimation.js";
+import { SlotLayer } from "./compositor.js";
 import { parseRip, drawRip, hitTest, RIP_WIDTH, RIP_HEIGHT } from "./rip.js";
 import { decodeArt } from "./cp437.js";
 import { InputController } from "./input.js";
@@ -57,7 +59,8 @@ export function blit(target, targetCols, source, row, col) {
 
 /**
  * The terminal engine. Writes, transitions and animations run one at a time from a queue on
- * requestAnimationFrame, each resolving its promise when finished.
+ * requestAnimationFrame, each resolving its promise when finished. Animation slots play alongside the
+ * queue (paused while a transition or full-screen animation runs) until stopped or the screen is cleared.
  */
 export class Terminal {
   /**
@@ -74,6 +77,7 @@ export class Terminal {
     this.renderer = new DomRenderer(env.screen, env.doc, ROWS);
     this.pacer = new Pacer(0);
     this.queue = [];
+    this.slots = new SlotLayer();
     this.active = null;
     this.lastTime = null;
     this.scheduled = false;
@@ -90,7 +94,7 @@ export class Terminal {
   }
 
   /**
-   * Handles one parsed token (BEL beeps; everything else draws).
+   * Handles one parsed token (BEL beeps; everything else draws, and clearing the screen stops the slots).
    * @param {object} token The token.
    * @returns {void}
    */
@@ -98,6 +102,9 @@ export class Terminal {
     if (token.t === "ctl" && token.ch === "\x07") {
       this.beep();
       return;
+    }
+    if (token.t === "csi" && token.final === "J" && token.params[0] === 2) {
+      this.slots.stopAll();
     }
     this.buffer.apply(token);
   }
@@ -171,6 +178,27 @@ export class Terminal {
   playAnimation(animationText, options = {}) {
     const anim = parseAnimation(animationText, options);
     return this.enqueue({ kind: "anim", anim, options, consumesKeys: true });
+  }
+
+  /**
+   * Starts an animation playing in a box of the screen, behind the queue (see compositor.js).
+   * @param {string} name The slot's name; starting it again replaces it.
+   * @param {{row?: number, col?: number, width: number, height: number, frames: string[], delays?: number[],
+   *   loop?: boolean, maxMs?: number}} spec The box (0-based) and the frames' ANSI.
+   * @returns {void}
+   */
+  startSlot(name, spec) {
+    this.slots.start(name, spec);
+    this.schedule();
+  }
+
+  /**
+   * Stops a slot, leaving its current frame on screen.
+   * @param {string} name The slot's name.
+   * @returns {void}
+   */
+  stopSlot(name) {
+    this.slots.stop(name);
   }
 
   /**
@@ -293,7 +321,7 @@ export class Terminal {
   }
 
   /**
-   * Runs one animation frame: advances the active item and draws.
+   * Runs one animation frame: advances the active item, then the slots, and draws.
    * @param {number} time The frame timestamp in milliseconds.
    * @returns {void}
    */
@@ -301,21 +329,37 @@ export class Terminal {
     this.scheduled = false;
     const elapsed = this.lastTime === null ? 16 : Math.min(100, time - this.lastTime);
     this.lastTime = time;
+    const busy = this.runQueue(time, elapsed);
+    if ((!this.active || this.active.kind === "write") && this.slots.tick(this.buffer, time, this.env.reducedMotion)) {
+      this.renderer.render(this.buffer);
+    }
+    if (busy || this.slots.active) {
+      this.schedule();
+    } else {
+      this.lastTime = null;
+    }
+  }
+
+  /**
+   * Advances the queue: finishes as many items as this frame allows.
+   * @param {number} time The frame timestamp in milliseconds.
+   * @param {number} elapsed Milliseconds since the last frame.
+   * @returns {boolean} True when an item is still running.
+   */
+  runQueue(time, elapsed) {
     while (this.active || this.queue.length > 0) {
       if (!this.active) {
         this.active = this.queue.shift();
         this.active.started = time;
       }
-      const finished = this.step(this.active, time, elapsed);
-      if (!finished) {
-        this.schedule();
-        return;
+      if (!this.step(this.active, time, elapsed)) {
+        return true;
       }
       const done = this.active;
       this.active = null;
       done.resolve();
     }
-    this.lastTime = null;
+    return false;
   }
 
   /**
@@ -509,6 +553,25 @@ export async function playAnimationUrl(url, options) {
   }
   await term().playAnimation(text, options ?? {});
   return true;
+}
+
+/**
+ * Interop: starts an animation slot (see Terminal.startSlot).
+ * @param {string} name The slot's name.
+ * @param {object} spec The box and frames.
+ * @returns {void}
+ */
+export function startSlot(name, spec) {
+  term().startSlot(name, spec);
+}
+
+/**
+ * Interop: stops an animation slot.
+ * @param {string} name The slot's name.
+ * @returns {void}
+ */
+export function stopSlot(name) {
+  term().stopSlot(name);
 }
 
 /**

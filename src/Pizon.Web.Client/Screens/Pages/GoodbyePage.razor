@@ -1,0 +1,9 @@
+@page "/goodbye"
+@layout BbsLayout
+@inherits BbsPage
+@attribute [BbsAccess(ScreenAccess.Public)]
+
+<PageTitle>@RouteTable.Tab("Goodbye")</PageTitle>
+<BbsScreen Art="GoodbyeArt.Instance" Enter="Transition.ScrollOff" OnDrawn="HangUpAsync">
+    <Field Slot="GoodbyeArt.Farewell" Value="@Farewell(Session.Handle, online)" />
+</BbsScreen>

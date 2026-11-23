@@ -2,7 +2,6 @@ using Bunit;
 using Pizon.Doors.Sdk;
 using Pizon.Doors.Sdk.Text;
 using Pizon.Web.Client.Api;
-using Pizon.Web.Client.Screens;
 using Pizon.Web.Client.Screens.Art;
 using Pizon.Web.Client.Screens.Components;
 using Pizon.Web.Client.Screens.Forms;
@@ -146,7 +145,7 @@ public sealed class FormComponentTests
                 .Add(x => x.Value, "Ne")
                 .Add(x => x.ValueChanged, (string v) => text = v)));
         cut.WaitForState(() => p.H.Host.ScreenCount > 0);
-        await p.RunAsync(ScreenId.ChangeHandle, "o", DoorKeys.Enter, DoorKeys.Up, DoorKeys.Left);
+        await p.RunAsync("o", DoorKeys.Enter, DoorKeys.Up, DoorKeys.Left);
 
         Assert.Equal("Neo", text);
         Assert.Equal([true, false], p.H.Terminal.LineModes);
@@ -179,7 +178,7 @@ public sealed class SettingsPageTests
     {
         await using var p = new PageHarness(path: "/settings");
         p.Show<SettingsPage>();
-        await p.RunAsync(ScreenId.Settings, "B", "A", "R", "x", "Q");
+        await p.RunAsync("B", "A", "R", "x", "Q");
 
         Assert.Equal(new TerminalSettings(0, true, false), p.H.Session.Settings);
         Assert.Equal(3, p.H.Terminal.Applied.Count);
@@ -210,9 +209,7 @@ public sealed class HandlePageTests
         h.Api.HandleResults.Enqueue(new ApiResult(ApiStatus.Invalid, "taken"));
         await using var p = new PageHarness(h, "/handle/new");
         p.Show<NewUserHandlePage>();
-        var left = await p.RunAsync(
-            ScreenId.NewUserHandle,
-            DoorKeys.Enter,
+        var left = await p.RunAsync(DoorKeys.Enter,
             DoorKeys.Backspace,
             DoorKeys.Backspace,
             DoorKeys.Backspace,
@@ -222,7 +219,7 @@ public sealed class HandlePageTests
             "c",
             DoorKeys.Enter);
 
-        Assert.Equal(ScreenId.RipCard, left);
+        Assert.Equal("/rip", left);
         Assert.Equal(["handle:Neo", "handle:abc"], h.Api.Calls);
         Assert.Contains("NEW USER - CHOOSE YOUR HANDLE", p.Plain, StringComparison.Ordinal);
         Assert.Contains("REJECTED: TAKEN", p.Plain, StringComparison.Ordinal);
@@ -246,7 +243,7 @@ public sealed class HandlePageTests
         h.Session.Settings = h.Session.Settings with { RipCard = false };
         await using var p = new PageHarness(h, "/handle/new");
         p.Show<NewUserHandlePage>();
-        Assert.Equal(ScreenId.MainMenu, await p.RunAsync(ScreenId.NewUserHandle, DoorKeys.Escape));
+        Assert.Equal("/menu", await p.RunAsync(DoorKeys.Escape));
         Assert.True(h.Session.ActingAsGuest);
         Assert.Equal("GUEST", h.Session.Handle);
         Assert.Contains("No handle, no problem", p.Plain, StringComparison.Ordinal);
@@ -260,7 +257,7 @@ public sealed class HandlePageTests
     {
         await using var p = new PageHarness(path: "/handle");
         p.Show<HandlePage>();
-        await p.RunAsync(ScreenId.ChangeHandle, "x");
+        await p.RunAsync("x");
         Assert.Contains("CHANGE HANDLE", p.Plain, StringComparison.Ordinal);
         Assert.Contains("ACCESS DENIED", p.Plain, StringComparison.Ordinal);
         Assert.Equal([("/menu", false)], p.H.Navigator.Moves);
@@ -276,9 +273,9 @@ public sealed class HandlePageTests
         h.Api.HandleResults.Enqueue(new ApiResult(ApiStatus.Failed));
         await using var p = new PageHarness(h, "/handle");
         var cut = p.Show<HandlePage>();
-        await p.RunAsync(ScreenId.ChangeHandle, DoorKeys.Enter, DoorKeys.Backspace, DoorKeys.Backspace, DoorKeys.Backspace);
+        await p.RunAsync(DoorKeys.Enter, DoorKeys.Backspace, DoorKeys.Backspace, DoorKeys.Backspace);
         h.Terminal.Press("Trinity").Keys(DoorKeys.Enter, "x");
-        await p.RunAsync(ScreenId.ChangeHandle);
+        await p.RunAsync();
 
         Assert.Equal(["handle:Neo", "handle:Trinity"], h.Api.Calls);
         Assert.Contains("LINE NOISE", p.Plain, StringComparison.Ordinal);
@@ -296,7 +293,7 @@ public sealed class HandlePageTests
         var h = new Harness().Member();
         await using var p = new PageHarness(h, "/handle/new");
         p.Show<NewUserHandlePage>();
-        await p.RunAsync(ScreenId.NewUserHandle, DoorKeys.Escape);
+        await p.RunAsync(DoorKeys.Escape);
         Assert.Contains("CHANGE HANDLE", p.Plain, StringComparison.Ordinal);
         Assert.Empty(h.Api.Calls);
         Assert.Equal([("/menu", false)], h.Navigator.Moves);
@@ -315,7 +312,7 @@ public sealed class PageSysopPageTests
     {
         await using var p = new PageHarness(path: "/page");
         p.Show<PageSysopPage>();
-        await p.RunAsync(ScreenId.PageSysop, "x");
+        await p.RunAsync("x");
         Assert.Contains("ACCESS DENIED", p.Plain, StringComparison.Ordinal);
         Assert.Equal([("/menu", false)], p.H.Navigator.Moves);
         Assert.Empty(p.H.Api.Calls);
@@ -331,7 +328,7 @@ public sealed class PageSysopPageTests
     {
         await using var p = new PageHarness(new Harness().Member(), "/page");
         p.Show<PageSysopPage>();
-        await p.RunAsync(ScreenId.PageSysop, key, "x");
+        await p.RunAsync(key, "x");
         Assert.Contains("Page cancelled", p.Plain, StringComparison.Ordinal);
         Assert.Empty(p.H.Api.Calls);
         Assert.Equal([("/menu", false)], p.H.Navigator.Moves);
@@ -346,7 +343,7 @@ public sealed class PageSysopPageTests
         await using var p = new PageHarness(h, "/page");
         p.Show<PageSysopPage>();
         h.Terminal.Press("Hi there").Keys(DoorKeys.Enter, "x");
-        await p.RunAsync(ScreenId.PageSysop);
+        await p.RunAsync();
         Assert.Equal(3, h.Terminal.Beeps);
         Assert.Equal(["page:Hi there"], h.Api.Calls);
         Assert.Contains("SysOp has been alerted", p.Plain, StringComparison.Ordinal);
@@ -357,7 +354,7 @@ public sealed class PageSysopPageTests
         await using var q = new PageHarness(limited, "/page");
         q.Show<PageSysopPage>();
         limited.Terminal.Press("again").Keys(DoorKeys.Enter);
-        await q.RunAsync(ScreenId.PageSysop);
+        await q.RunAsync();
         Assert.Contains("SPEED RACER", q.Plain, StringComparison.Ordinal);
     }
 }
@@ -376,7 +373,7 @@ public sealed class ComposePageTests
     {
         await using var p = new PageHarness(path: "/board/new");
         p.Show<BoardNewPage>();
-        await p.RunAsync(ScreenId.BoardNew, "x");
+        await p.RunAsync("x");
         Assert.Contains("ACCESS DENIED", p.Plain, StringComparison.Ordinal);
         Assert.Equal([("/board", false)], p.H.Navigator.Moves);
         Assert.Empty(p.H.Api.Calls);
@@ -394,7 +391,7 @@ public sealed class ComposePageTests
         await using var p = new PageHarness(h, "/board/new");
         p.Show<BoardNewPage>();
         h.Terminal.Press("Hello").Keys(DoorKeys.Enter).Press("World").Keys(DoorKeys.Enter, DoorKeys.Enter, "x");
-        await p.RunAsync(ScreenId.BoardNew);
+        await p.RunAsync();
 
         Assert.Equal(["post::Hello\nWorld"], h.Api.Calls);
         Assert.Contains("NEW MESSAGE", p.Plain, StringComparison.Ordinal);
@@ -413,7 +410,7 @@ public sealed class ComposePageTests
         await using var p = new PageHarness(h, "/board/new");
         var cut = p.Show<BoardNewPage>();
         h.Terminal.Press(string.Concat(Enumerable.Repeat("word ", 16)));
-        await p.RunAsync(ScreenId.BoardNew);
+        await p.RunAsync();
         var editor = cut.FindComponent<BlockEditor>().Instance;
         Assert.Equal(2, editor.Box.Lines.Count);
         Assert.Equal(editor.Box.Text, h.Session.ComposeDraft);
@@ -429,7 +426,7 @@ public sealed class ComposePageTests
         {
             p.Show<BoardNewPage>();
             h.Terminal.Press("Draft").Keys(DoorKeys.Escape);
-            await p.RunAsync(ScreenId.BoardNew);
+            await p.RunAsync();
         }
 
         Assert.Equal("Draft", h.Session.ComposeDraft);
@@ -439,7 +436,7 @@ public sealed class ComposePageTests
         var cut = again.Show<BoardNewPage>();
         Assert.Equal("Draft", cut.FindComponent<BlockEditor>().Instance.Box.Text);
         h.Terminal.Keys(DoorKeys.Backspace, DoorKeys.Backspace, DoorKeys.Backspace, DoorKeys.Backspace, DoorKeys.Backspace, DoorKeys.Enter);
-        await again.RunAsync(ScreenId.BoardNew);
+        await again.RunAsync();
         Assert.Contains("Message abandoned", again.Plain, StringComparison.Ordinal);
         Assert.Null(h.Session.ComposeDraft);
         Assert.Empty(h.Api.Calls);
@@ -461,7 +458,7 @@ public sealed class ComposePageTests
             .Press("x").Keys(DoorKeys.Down, DoorKeys.Enter)
             .Keys(DoorKeys.Backspace).Press("99").Keys(DoorKeys.Enter).Press("Reply").Keys(DoorKeys.Enter, DoorKeys.Enter)
             .Keys(DoorKeys.Up, DoorKeys.Backspace, DoorKeys.Backspace).Press("1").Keys(DoorKeys.Enter, DoorKeys.Enter, DoorKeys.Enter, "x");
-        await p.RunAsync(ScreenId.BoardReply);
+        await p.RunAsync();
 
         Assert.Contains("REPLY TO A MESSAGE", p.Plain, StringComparison.Ordinal);
         Assert.Contains(ComposeModel.NoNumber, p.Plain, StringComparison.Ordinal);
@@ -480,7 +477,7 @@ public sealed class ComposePageTests
         await using var p = new PageHarness(h, "/board/reply");
         p.Show<BoardReplyPage>();
         h.Terminal.Press("1").Keys(DoorKeys.Enter).Press("Hi").Keys(DoorKeys.Enter, DoorKeys.Enter);
-        await p.RunAsync(ScreenId.BoardReply);
+        await p.RunAsync();
         Assert.Contains("LINE NOISE", p.Plain, StringComparison.Ordinal);
 
         var limited = new Harness().Member();
@@ -488,7 +485,7 @@ public sealed class ComposePageTests
         await using var q = new PageHarness(limited, "/board/new");
         q.Show<BoardNewPage>();
         limited.Terminal.Press("Hi").Keys(DoorKeys.Enter, DoorKeys.Enter);
-        await q.RunAsync(ScreenId.BoardNew);
+        await q.RunAsync();
         Assert.Contains("SPEED RACER", q.Plain, StringComparison.Ordinal);
         Assert.Equal("Hi", limited.Session.ComposeDraft);
     }
@@ -520,7 +517,7 @@ public sealed class SysopPageTests
         await using var p = new PageHarness(new Harness().Member(sysop: true), "/sysop");
         var cut = p.Show<SysopPage>();
         Assert.Contains("/sysop/queue", cut.Markup, StringComparison.Ordinal);
-        await p.RunAsync(ScreenId.SysopConsole, "3");
+        await p.RunAsync("3");
         Assert.Contains("SYSOP CONSOLE", p.Plain, StringComparison.Ordinal);
         Assert.Equal([("/sysop/delete", false)], p.H.Navigator.Moves);
     }
@@ -534,7 +531,7 @@ public sealed class SysopPageTests
         h.Api.Queue = new(ApiStatus.Ok, Queue);
         await using var p = new PageHarness(h, "/sysop/queue");
         p.Show<SysopQueuePage>();
-        await p.RunAsync(ScreenId.SysopConsole, "z", "A", "B", "N", "x");
+        await p.RunAsync("z", "A", "B", "N", "x");
 
         Assert.Equal(["moderate:1:True", "ban:20", "moderate:2:False"], h.Api.Calls);
         Assert.Contains("[1/3]", p.Plain, StringComparison.Ordinal);
@@ -553,7 +550,7 @@ public sealed class SysopPageTests
         h.Api.WriteResult = new ApiResult(ApiStatus.Forbidden);
         await using var p = new PageHarness(h, "/sysop/queue");
         p.Show<SysopQueuePage>();
-        await p.RunAsync(ScreenId.SysopConsole, "X", "B", "Q");
+        await p.RunAsync("X", "B", "Q");
 
         Assert.Equal(["moderate:1:False", "ban:10"], h.Api.Calls);
         Assert.Contains("THE SYSOP HAS SPOKEN", p.Plain, StringComparison.Ordinal);
@@ -568,14 +565,14 @@ public sealed class SysopPageTests
         var h = new Harness().Member(sysop: true);
         await using var p = new PageHarness(h, "/sysop/queue");
         p.Show<SysopQueuePage>();
-        await p.RunAsync(ScreenId.SysopConsole, "x");
+        await p.RunAsync("x");
         Assert.Contains("Nothing waiting", p.Plain, StringComparison.Ordinal);
 
         var f = new Harness().Member(sysop: true);
         f.Api.Queue = new(ApiStatus.Failed);
         await using var q = new PageHarness(f, "/sysop/queue");
         q.Show<SysopQueuePage>();
-        await q.RunAsync(ScreenId.SysopConsole, "x");
+        await q.RunAsync("x");
         Assert.Contains("LINE NOISE", q.Plain, StringComparison.Ordinal);
     }
 
@@ -588,7 +585,7 @@ public sealed class SysopPageTests
         h.Api.Pages = new(ApiStatus.Ok, [new SysopPageDto(5, "Neo", "hello", T0, false), new SysopPageDto(6, "Old", "seen", T0, true)]);
         await using var p = new PageHarness(h, "/sysop/pages");
         p.Show<SysopPagesPage>();
-        await p.RunAsync(ScreenId.SysopConsole, "x");
+        await p.RunAsync("x");
 
         Assert.Contains("PAGES INBOX", p.Plain, StringComparison.Ordinal);
         Assert.Contains("hello", p.Plain, StringComparison.Ordinal);
@@ -617,7 +614,7 @@ public sealed class SysopPageTests
         h.Terminal
             .Press("abc").Keys(DoorKeys.Enter, DoorKeys.Backspace, DoorKeys.Backspace, DoorKeys.Backspace)
             .Press("7").Keys(DoorKeys.Enter, "z", "N", DoorKeys.Enter, "Y", "x");
-        await p.RunAsync(ScreenId.SysopConsole);
+        await p.RunAsync();
 
         Assert.Contains(DeleteMessageModel.NoNumber, p.Plain, StringComparison.Ordinal);
         Assert.Contains("Delete #7 and all its replies?", p.Plain, StringComparison.Ordinal);
@@ -636,12 +633,12 @@ public sealed class SysopPageTests
         await using var p = new PageHarness(h, "/sysop/delete");
         p.Show<SysopDeletePage>();
         h.Terminal.Press("7").Keys(DoorKeys.Enter, "Y");
-        await p.RunAsync(ScreenId.SysopConsole);
+        await p.RunAsync();
         Assert.Contains("THE SYSOP HAS SPOKEN", p.Plain, StringComparison.Ordinal);
 
         await using var q = new PageHarness(new Harness().Member(sysop: true), "/sysop/delete");
         q.Show<SysopDeletePage>();
-        await q.RunAsync(ScreenId.SysopConsole, DoorKeys.Escape);
+        await q.RunAsync(DoorKeys.Escape);
         Assert.Equal([("/sysop", false)], q.H.Navigator.Moves);
     }
 }

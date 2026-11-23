@@ -99,16 +99,6 @@ public static class Ui
     }
 
     /// <summary>
-    /// Formats a hotkey menu item as a clickable hotspot, in ANSI.
-    /// </summary>
-    /// <param name="key">The key.</param>
-    /// <param name="label">The label.</param>
-    /// <param name="keyLabel">The key as shown (defaults to <paramref name="key"/>).</param>
-    /// <returns>ANSI text.</returns>
-    public static string Item(string key, string label, string? keyLabel = null) =>
-        Ansi.Hotspot(key, P($"|14[{keyLabel ?? key}]|07 {label}"));
-
-    /// <summary>
     /// Formats a hotkey menu item as a clickable hotspot, in pipe codes (for binding into art).
     /// </summary>
     /// <param name="key">The key (a single key; trusted text).</param>

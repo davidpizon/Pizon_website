@@ -1,29 +1,39 @@
+using System.Diagnostics.CodeAnalysis;
+using Pizon.Doors.Sdk.Text;
+using Pizon.Web.Client.Screens.Art;
 using Pizon.Web.Client.Screens.Components;
+using Pizon.Web.Client.Screens.Rendering;
 using Pizon.Web.Client.Services;
 using Pizon.Web.Client.Terminal;
 
 namespace Pizon.Web.Client.Screens.Hosting;
 
 /// <summary>
-/// Hosts screen pages in the terminal. Each page's <see cref="BbsScreen"/> registers here when it renders;
-/// while the BBS is on a page screen (see <see cref="PageScreen"/>), the host's pump draws the page for the
-/// current address, reads keys and hands them to it, and redraws when the page changes. A page never
-/// writes to the terminal while it isn't the one on screen.
+/// Runs the call. It owns the terminal once <see cref="Layout.BbsLayout"/> attaches it, works out where the
+/// call starts from the address (dial-up, back from Discord, or a link straight to a page), and then follows
+/// the address: for each route it applies <see cref="RouteTable.Guard"/> and runs the pump, which draws the
+/// page for the current address, reads keys and hands them to it, and redraws when the page changes. Each
+/// page's <see cref="BbsScreen"/> registers here when it renders, and never writes to the terminal while it
+/// isn't the one on screen. Work without an address of its own (signing in, logging out) runs inside a
+/// page's handler through <see cref="SignInAsync"/>, <see cref="LogOnAsync"/> and <see cref="LogOutAsync"/>.
 /// </summary>
-/// <remarks>
-/// Phase 4 of <c>docs/plans/screen-pages.md</c>: the <see cref="BbsApp"/> loop still runs the legacy
-/// screens and hands over to this pump for every screen that has become a page.
-/// </remarks>
 public sealed class BbsHost
 {
+    /// <summary>The message shown when Discord sign-in failed or was cancelled.</summary>
+    public const string LoginFailedMessage = "LOGIN FAILED - NO CARRIER ON THAT LINE";
+
+    /// <summary>Where Discord sends the caller back to.</summary>
+    public const string ResumeUrl = "/login?resume=1";
+
     private readonly IExternalNavigator navigator;
     private readonly List<BbsScreen> screens = [];
     private readonly List<Func<Task>> refreshers = [];
     private readonly TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private TaskCompletionSource changed = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private CancellationTokenSource? reading;
+    private CancellationTokenSource? routeStop;
+    private string? running;
     private ScreenContext? context;
-    private ScreenId? leaving;
     private BbsScreen? drawn;
     private int drawnVersion;
     private int signals;
@@ -37,6 +47,7 @@ public sealed class BbsHost
     {
         ArgumentNullException.ThrowIfNull(navigator);
         this.navigator = navigator;
+        navigator.LocationChanged += OnLocationChanged;
     }
 
     /// <summary>Gets the call: one per browser tab.</summary>
@@ -64,6 +75,18 @@ public sealed class BbsHost
     internal int ScreenCount => screens.Count;
 
     /// <summary>
+    /// Builds the sign-in URL. It comes back to <see cref="ResumeUrl"/>, carrying the address to open afterwards.
+    /// </summary>
+    /// <param name="dev">Use the Development-only fake sign-in instead of Discord.</param>
+    /// <param name="returnTo">The local path to open after signing in, if any.</param>
+    /// <returns>The URL to navigate to.</returns>
+    public static string SignInUrl(bool dev, string? returnTo = null)
+    {
+        var resume = returnTo is null ? ResumeUrl : ResumeUrl + "&returnUrl=" + Uri.EscapeDataString(returnTo);
+        return (dev ? "auth/dev?user=tester&returnUrl=" : "auth/discord?returnUrl=") + Uri.EscapeDataString(resume);
+    }
+
+    /// <summary>
     /// Attaches the terminal and the shared services, once per tab.
     /// </summary>
     /// <param name="screenContext">Everything screens share.</param>
@@ -75,24 +98,135 @@ public sealed class BbsHost
     }
 
     /// <summary>
-    /// Goes to another address. The page on screen stops writing straight away.
+    /// Runs the call until the page goes away: starts it from the address, then runs the page for each
+    /// address the caller goes to. A page that fails drops the line back to the Connect screen.
     /// </summary>
-    /// <param name="path">A local path.</param>
-    public void Navigate(string path)
+    /// <param name="cancellationToken">Cancelled when the page goes away.</param>
+    /// <returns>A task that completes when the call ends.</returns>
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "Any page failure must drop the caller back to the Connect screen instead of killing the app.")]
+    public async Task RunAsync(CancellationToken cancellationToken)
     {
-        Live = null;
-        navigator.Navigate(path, replace: false);
+        try
+        {
+            await StartAsync(cancellationToken);
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var path = CurrentPath;
+                if (!RouteTable.TryResolve(path, out var route))
+                {
+                    await GoAsync("/", cancellationToken);
+                    continue;
+                }
+
+                var decision = RouteTable.Guard(route, path, Session);
+                if (decision == RouteDecision.LogOnFirst)
+                {
+                    await GoAsync("/login", cancellationToken);
+                    continue;
+                }
+
+                using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                routeStop = stop;
+                running = route.Path;
+                try
+                {
+                    if (decision == RouteDecision.NotFound)
+                    {
+                        await NotFoundAsync(stop.Token);
+                    }
+                    else
+                    {
+                        await RunPagesAsync(route.Path, stop.Token);
+                    }
+                }
+                catch (Exception) when (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception) when (stop.IsCancellationRequested)
+                {
+                    // The address moved on (Back, Forward or a link); its page runs next.
+                }
+                catch (Exception)
+                {
+                    await DropLineAsync(cancellationToken);
+                }
+                finally
+                {
+                    routeStop = null;
+                    running = null;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The page went away.
+        }
     }
 
     /// <summary>
-    /// Leaves the pages for a screen that has no address of its own (signing in, logging out).
+    /// Goes to another address. The page on screen stops writing straight away.
     /// </summary>
-    /// <param name="screen">The screen to run next.</param>
-    public void Leave(ScreenId screen)
+    /// <param name="path">A local path.</param>
+    /// <param name="replace">Whether to replace the history entry (moving on from the way in, so Back doesn't redial).</param>
+    public void Navigate(string path, bool replace = false)
     {
         Live = null;
-        leaving = screen;
-        Signal();
+        navigator.Navigate(path, replace);
+    }
+
+    /// <summary>
+    /// Finishes logging on: joins presence, then opens the address the caller was linked to
+    /// (<see cref="BbsSession.ReturnTo"/>), or else the RIP card or the main menu. Runs inside the login or
+    /// handle page; the way in is replaced in the history.
+    /// </summary>
+    /// <returns>A task that completes once the next address is open.</returns>
+    public async Task LogOnAsync()
+    {
+        Session.SignedOn = true;
+        await Context.Presence.ConnectAsync(PageToken);
+        await Terminal.DelayAsync(TimeSpan.FromMilliseconds(600), PageToken);
+        var returnTo = Session.ReturnTo;
+        Session.ReturnTo = null;
+        var linked = RouteTable.TryResolve(returnTo, out var route) && route.Path is not ("/" or "/login") && returnTo != "/handle/new";
+        Navigate(linked ? returnTo! : Session.Settings.RipCard ? "/rip" : "/menu", replace: true);
+    }
+
+    /// <summary>
+    /// Leaves the page for Discord sign-in (or the Development-only fake sign-in), which comes back to the
+    /// login screen and then to <see cref="BbsSession.ReturnTo"/>.
+    /// </summary>
+    /// <param name="dev">Use the fake sign-in.</param>
+    /// <returns>A task that completes once the browser is on its way.</returns>
+    public async Task SignInAsync(bool dev = false)
+    {
+        var text = dev ? "\r\n|08Dialing the dev line...|07" : "\r\n|08Transferring you to the Discord switchboard... hold the line.|07";
+        await Terminal.WriteAsync(PipeCodes.ToAnsi(text), PageToken);
+        navigator.NavigateAway(SignInUrl(dev, Session.ReturnTo));
+    }
+
+    /// <summary>
+    /// Logs out of Discord: clears the sign-in cookie and reloads the BBS. If the server refuses, says why
+    /// and redraws the page on screen.
+    /// </summary>
+    /// <returns>A task that completes when done.</returns>
+    public async Task LogOutAsync()
+    {
+        await Terminal.WriteAsync(PipeCodes.ToAnsi("\r\n|08Shredding your sign-in cookie...|07"), PageToken);
+        var result = await Context.Api.LogoutAsync(PageToken);
+        if (!result.IsOk)
+        {
+            await Terminal.WriteAsync(Ui.Failure(result), PageToken);
+            await Ui.PressAnyKeyAsync(Terminal, PageToken);
+            Live?.Redraw();
+            return;
+        }
+
+        await Context.Presence.DisconnectAsync();
+        navigator.NavigateAway("/");
     }
 
     /// <summary>
@@ -123,28 +257,21 @@ public sealed class BbsHost
     }
 
     /// <summary>
-    /// Runs the pages for one screen until the caller leaves it: draws the newest page whose address belongs
-    /// to <paramref name="screen"/>, sends it keys, and redraws whenever another page for the same screen
+    /// Runs the pages of one route until the address leaves it: draws the newest page whose address belongs
+    /// to <paramref name="route"/>, sends it keys, and redraws whenever another page of the same route
     /// replaces it (<c>/bulletins</c> to <c>/bulletins/2</c>) or the page asks to be redrawn.
     /// </summary>
-    /// <param name="screen">The screen whose pages to run.</param>
-    /// <param name="cancellationToken">Cancelled when the address moves to another screen.</param>
-    /// <returns>The screen a page left for (see <see cref="Leave"/>).</returns>
-    public async Task<ScreenId> RunPagesAsync(ScreenId screen, CancellationToken cancellationToken)
+    /// <param name="route">The route's path.</param>
+    /// <param name="cancellationToken">Cancelled when the page goes away.</param>
+    /// <returns>A task that completes when the address has moved to another route.</returns>
+    internal async Task RunPagesAsync(string route, CancellationToken cancellationToken)
     {
-        leaving = null;
         drawn = null;
         PageToken = cancellationToken;
         try
         {
-            while (true)
+            while (await NextAsync(route, cancellationToken) is { } page)
             {
-                var page = await NextAsync(screen, cancellationToken);
-                if (page is null)
-                {
-                    return leaving!.Value;
-                }
-
                 foreach (var refresh in refreshers.ToList())
                 {
                     await refresh();
@@ -156,7 +283,7 @@ public sealed class BbsHost
                 await Terminal.TransitionAsync(page.Enter, page.Compose(), cancellationToken);
                 Live = page;
                 await page.AfterDrawAsync(cancellationToken);
-                await PumpKeysAsync(screen, page, cancellationToken);
+                await PumpKeysAsync(route, page, cancellationToken);
             }
         }
         finally
@@ -172,7 +299,7 @@ public sealed class BbsHost
     /// <param name="screen">The screen.</param>
     internal void Add(BbsScreen screen)
     {
-        screen.Screen = RouteTable.TryResolve(CurrentPath, out var route) ? route.Screen : null;
+        screen.Route = RouteOf(CurrentPath);
         screens.Add(screen);
         Signal();
     }
@@ -198,7 +325,7 @@ public sealed class BbsHost
     /// <param name="refresh">The refresh passed to <see cref="AddRefresher"/>.</param>
     internal void RemoveRefresher(Func<Task> refresh) => refreshers.Remove(refresh);
 
-    /// <summary>Wakes the pump: a page came or went, asked to be redrawn, or has work queued.</summary>
+    /// <summary>Wakes the pump: a page came or went, asked to be redrawn, has work queued, or the address moved.</summary>
     internal void Signal()
     {
         signals++;
@@ -208,22 +335,153 @@ public sealed class BbsHost
         reading?.Cancel();
     }
 
-    private BbsScreen? Newest(ScreenId screen) => screens.LastOrDefault(s => s.Screen == screen);
+    private static string? RouteOf(string path) => RouteTable.TryResolve(path, out var route) ? route.Path : null;
 
-    private bool IsCurrent(ScreenId screen, BbsScreen page) =>
-        leaving is null && Newest(screen) == page && drawn == page && page.Version == drawnVersion;
+    private static string? Query(Uri uri, string key)
+    {
+        foreach (var pair in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var eq = pair.IndexOf('=', StringComparison.Ordinal);
+            var name = eq < 0 ? pair : pair[..eq];
+            if (name.Equals(key, StringComparison.OrdinalIgnoreCase))
+            {
+                return eq < 0 ? string.Empty : Uri.UnescapeDataString(pair[(eq + 1)..]);
+            }
+        }
 
-    private async Task<BbsScreen?> NextAsync(ScreenId screen, CancellationToken cancellationToken)
+        return null;
+    }
+
+    /// <summary>
+    /// Follows the address: stops the route's page when the address moves to another route (Back, Forward
+    /// or a link), so long work such as the RIP card ends, and wakes the pump.
+    /// </summary>
+    private void OnLocationChanged(object? sender, Uri uri)
+    {
+        if (running is not null && RouteOf(uri.AbsolutePath) != running)
+        {
+            routeStop?.Cancel();
+        }
+
+        Signal();
+    }
+
+    /// <summary>
+    /// Works out where the call starts and notes it on the session.
+    /// <list type="bullet">
+    /// <item><c>/</c> dials up (the Connect page).</item>
+    /// <item><c>/login</c> is the login screen; <c>resume=1</c> means back from Discord, <c>error=failed</c>
+    /// shows the sign-in failure and <c>returnUrl</c> is where to go afterwards. The old
+    /// <c>/?resume=login</c> and <c>/?login=failed</c> addresses still work.</item>
+    /// <item>Any other address is a link straight to that page (no dial-up): the host asks the server who
+    /// is calling and joins presence, so the page draws straight away. A signed-in caller counts as logged
+    /// on; one who signed in but never chose a handle picks one first and then comes back to the link.</item>
+    /// </list>
+    /// </summary>
+    /// <param name="cancellationToken">Cancelled when the page goes away.</param>
+    /// <returns>A task that completes once the call is set up.</returns>
+    internal async Task StartAsync(CancellationToken cancellationToken)
+    {
+        var uri = navigator.CurrentUri;
+        var path = CurrentPath;
+        var failed = string.Equals(Query(uri, "login"), "failed", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(Query(uri, "error"), "failed", StringComparison.OrdinalIgnoreCase);
+        var resumed = failed || Query(uri, "resume") is "1" ||
+            string.Equals(Query(uri, "resume"), "login", StringComparison.OrdinalIgnoreCase);
+
+        if (path == "/" && !resumed)
+        {
+            return;
+        }
+
+        if (path is "/" or "/login")
+        {
+            Session.Resumed = resumed;
+            Session.LoginError = failed ? LoginFailedMessage : null;
+            var back = Query(uri, "returnUrl");
+            if (RouteTable.TryResolve(back, out _))
+            {
+                var end = back!.IndexOfAny(['?', '#']);
+                Session.ReturnTo = RouteTable.Normalize(end < 0 ? back : back[..end]);
+            }
+
+            if (resumed)
+            {
+                Session.ConnectedAt = Context.Time.GetUtcNow();
+                await Terminal.WriteAsync(PipeCodes.ToAnsi("|15CARRIER RESTORED - WELCOME BACK|07\r\n"), cancellationToken);
+            }
+
+            if (path == "/")
+            {
+                await GoAsync("/login", cancellationToken);
+            }
+
+            return;
+        }
+
+        if (!RouteTable.TryResolve(path, out _))
+        {
+            return;
+        }
+
+        Session.DeepLink = true;
+        Session.ConnectedAt = Context.Time.GetUtcNow();
+        Session.Me = await Context.Api.GetMeAsync(cancellationToken);
+        if (Session.Me.Authenticated && Session.Me.Handle is null)
+        {
+            Session.ReturnTo = path;
+            await GoAsync("/handle/new", cancellationToken);
+            return;
+        }
+
+        Session.SignedOn = Session.Me.Authenticated;
+        await Context.Presence.ConnectAsync(cancellationToken);
+    }
+
+    /// <summary>Moves to another address in place of this one and waits until the address has moved.</summary>
+    private async Task GoAsync(string path, CancellationToken cancellationToken)
+    {
+        var moved = changed.Task;
+        Navigate(path, replace: true);
+        await moved.WaitAsync(cancellationToken);
+    }
+
+    /// <summary>"File not found": shown instead of a page the caller may not open, without saying that it exists.</summary>
+    private async Task NotFoundAsync(CancellationToken cancellationToken)
+    {
+        var view = new ScreenView(NotFoundArt.Instance);
+        await Terminal.WriteAsync(view.Render(), cancellationToken);
+        await view.PressAnyKeyAsync(Terminal, cancellationToken);
+        Navigate("/menu", replace: true);
+    }
+
+    /// <summary>A page failed: says so, then goes back to the Connect screen.</summary>
+    private async Task DropLineAsync(CancellationToken cancellationToken)
+    {
+        await Terminal.WriteAsync(PipeCodes.ToAnsi("\r\n\r\n|09LINE NOISE - CONNECTION LOST.|07\r\n\r\n|15NO CARRIER|07\r\n"), cancellationToken);
+        await Terminal.DelayAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        if (CurrentPath != "/")
+        {
+            await GoAsync("/", cancellationToken);
+        }
+    }
+
+    private BbsScreen? Newest(string route) => screens.LastOrDefault(s => s.Route == route);
+
+    private bool IsCurrent(string route, BbsScreen page) =>
+        RouteOf(CurrentPath) == route && Newest(route) == page && drawn == page && page.Version == drawnVersion;
+
+    private async Task<BbsScreen?> NextAsync(string route, CancellationToken cancellationToken)
     {
         while (true)
         {
             var wake = changed.Task;
-            if (leaving is not null)
+            if (RouteOf(CurrentPath) != route)
             {
                 return null;
             }
 
-            if (Newest(screen) is { } page)
+            if (Newest(route) is { } page)
             {
                 return page;
             }
@@ -232,12 +490,12 @@ public sealed class BbsHost
         }
     }
 
-    private async Task PumpKeysAsync(ScreenId screen, BbsScreen page, CancellationToken cancellationToken)
+    private async Task PumpKeysAsync(string route, BbsScreen page, CancellationToken cancellationToken)
     {
         while (true)
         {
             var seen = signals;
-            if (!IsCurrent(screen, page))
+            if (!IsCurrent(route, page))
             {
                 return;
             }

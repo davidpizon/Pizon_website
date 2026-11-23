@@ -663,12 +663,6 @@ internal sealed class Harness
     public BbsSession Session => Host.Session;
 
     /// <summary>
-    /// Creates the BBS loop over this harness.
-    /// </summary>
-    /// <returns>The loop.</returns>
-    public BbsApp App() => new(Context, Host);
-
-    /// <summary>
     /// Makes the caller a signed-in member (or the SysOp).
     /// </summary>
     /// <param name="sysop">Whether the caller is the SysOp.</param>

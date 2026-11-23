@@ -43,13 +43,21 @@ src/
   Pizon.AppHost/      Aspire AppHost (web + SQLite; SQLite Web and ntfy containers are opt-in)
   Pizon.ServiceDefaults/  OpenTelemetry, health checks (/healthz), resilience
   Pizon.Web/          server: auth, APIs, EF Core, SignalR hub, notifier
-  Pizon.Web.Client/   all UI: screens (C#), services, wwwroot/content (bulletins, files, art),
-                      wwwroot/js/terminal (the ANSI emulator)
-  Pizon.Doors.Sdk/    the door contract (IDoor, IDoorContext), pipe codes, palette, FakeDoorContext
+  Pizon.Web.Client/   all UI, in the browser:
+    Screens/Pages/      one screen page per address (@page + .razor.cs)
+    Screens/Art/        Durdraw screen art (.dur, .anim.json), compiled at build time
+    Screens/Components/ BbsScreen, Field, List, Hotkey, Slot, BbsForm, InputField, BlockEditor
+    Screens/Hosting/    BbsHost (runs the call and the key pump), BbsPage, [BbsAccess]
+    Screens/Rendering/  ScreenArt, ScreenView, TextBox; Screens/Forms/ form models
+    Screens/            RouteTable (addresses and access), BbsSession, Ui
+    Layout/BbsLayout    hosts the terminal; Pages/NotFound the plain 404
+    Services/, Terminal/, Doors/, Api/, Content/
+    wwwroot/content     bulletins, files, banner, RIP card; wwwroot/js/terminal (the ANSI emulator)
+  Pizon.Doors.Sdk/    the door contract (IDoor, IDoorContext), pipe codes, TextLayout, palette, FakeDoorContext
   Pizon.Screens.Generator/  the screen compiler: Screens/Art/*.dur → C# art classes at build time
   Pizon.Doors.Oracle/ first door, lazy-loaded
   templates/pizon-door/  `dotnet new pizon-door` template
-  tools/              Node scripts: banner and RIP generators, .sh → animation JSON converter
+  tools/              Node scripts: screen art, banner and RIP generators, .sh → animation JSON converter
   tests/              every test project, plus tests/js (node --test)
   deploy/             docker-compose, Caddyfile, setup-server.sh, deploy.ps1, pull-backup.ps1
   Dockerfile          production image (build context: src/)

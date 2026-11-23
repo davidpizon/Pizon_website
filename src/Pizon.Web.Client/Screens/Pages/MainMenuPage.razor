@@ -22,7 +22,7 @@
     <Hotkey Key="S" Href="/settings" Label="Terminal Settings" />
     <Hotkey Key="R" Href="/rip" Label="RIP Welcome Card" />
     <Hotkey Key="G" Href="/goodbye" Label="Goodbye - Logoff" />
-    <Hotkey Key="D" Screen="ScreenId.SignIn" When="@(!Session.IsMember && Session.Me.DiscordEnabled)" />
-    <Hotkey Key="L" Screen="ScreenId.Logout" When="@Session.Me.Authenticated" />
+    <Hotkey Key="D" OnPress="@(_ => Host.SignInAsync())" When="@(!Session.IsMember && Session.Me.DiscordEnabled)" Label="Sign in with Discord" />
+    <Hotkey Key="L" OnPress="@(_ => Host.LogOutAsync())" When="@Session.Me.Authenticated" Label="Log out of Discord" />
     <Hotkey Key="*" Href="/sysop" When="@Session.IsSysop" Label="SysOp Console" />
 </BbsScreen>

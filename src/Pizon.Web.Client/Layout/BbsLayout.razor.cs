@@ -11,7 +11,7 @@ using Pizon.Web.Client.Terminal;
 namespace Pizon.Web.Client.Layout;
 
 /// <summary>
-/// The BBS layout: hosts the 80x25 terminal and the RIP canvas and runs the BBS in them. Every screen route
+/// The BBS layout: hosts the 80x25 terminal and the RIP canvas, and starts the call (<see cref="BbsHost.RunAsync"/>) in them. Every screen route
 /// uses this layout, and Blazor keeps a layout alive while the address moves between pages that share it,
 /// so the terminal and the call survive moving from screen to screen (and Back and Forward).
 /// </summary>
@@ -81,8 +81,6 @@ public sealed partial class BbsLayout : IAsyncDisposable
         var doors = new DoorHost(terminal, Api, Content, terminal, DoorLoader);
         var context = new ScreenContext(terminal, Api, Content, Presence, Navigator, terminal, doors, Time);
         Host.Attach(context);
-        var app = new BbsApp(context, Host);
-        var start = BbsApp.StartScreen(Navigator.CurrentUri, session);
-        _ = app.RunAsync(session, start, stop.Token);
+        _ = Host.RunAsync(stop.Token);
     }
 }

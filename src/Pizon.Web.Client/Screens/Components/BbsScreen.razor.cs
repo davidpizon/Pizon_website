@@ -65,8 +65,8 @@ public sealed partial class BbsScreen : IDisposable
     [Parameter]
     public RenderFragment? ChildContent { get; set; }
 
-    /// <summary>Gets the screen the page's address belongs to (set when the screen registers).</summary>
-    public ScreenId? Screen { get; internal set; }
+    /// <summary>Gets the route the page's address belongs to (set when the screen registers).</summary>
+    public string? Route { get; internal set; }
 
     /// <summary>Gets the draw version: it goes up when the page asks to be drawn again (<see cref="Redraw"/>).</summary>
     public int Version { get; private set; }
@@ -460,7 +460,7 @@ public sealed partial class BbsScreen : IDisposable
 
     private async Task PressAsync(Hotkey hotkey, string key, CancellationToken cancellationToken)
     {
-        var leaves = hotkey.Href is not null || hotkey.Screen is not null;
+        var leaves = hotkey.Href is not null;
         if (leaves && EchoKeys && key.Length == 1)
         {
             await Host.Terminal.WriteAsync(key.ToUpperInvariant(), cancellationToken);
@@ -476,11 +476,7 @@ public sealed partial class BbsScreen : IDisposable
             await InvokeAsync(() => hotkey.OnPress.InvokeAsync(key));
         }
 
-        if (hotkey.Screen is { } screen)
-        {
-            Host.Leave(screen);
-        }
-        else if (hotkey.Href is { } href)
+        if (hotkey.Href is { } href)
         {
             Host.Navigate(href);
         }

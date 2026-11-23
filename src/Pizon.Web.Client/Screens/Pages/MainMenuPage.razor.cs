@@ -20,40 +20,6 @@ public sealed partial class MainMenuPage
     [Inject]
     public required IPresence Presence { get; set; }
 
-    /// <summary>
-    /// Maps a menu key to its screen for this caller, the same way the menu's hotkeys do (the RIP card's
-    /// buttons send menu keys).
-    /// </summary>
-    /// <param name="key">The key pressed.</param>
-    /// <param name="session">The call (some keys depend on who is calling).</param>
-    /// <returns>The screen, or <see langword="null"/> for keys that do nothing.</returns>
-    public static ScreenId? Route(string? key, BbsSession session)
-    {
-        ArgumentNullException.ThrowIfNull(session);
-        if (key is not { Length: 1 })
-        {
-            return null;
-        }
-
-        return char.ToUpperInvariant(key[0]) switch
-        {
-            '1' => ScreenId.Bulletins,
-            '2' => ScreenId.MessageBoard,
-            '3' => ScreenId.FileAreas,
-            '4' => ScreenId.Doors,
-            '5' => ScreenId.UserList,
-            'P' => ScreenId.PageSysop,
-            'H' => ScreenId.ChangeHandle,
-            'S' => ScreenId.Settings,
-            'R' => ScreenId.RipCard,
-            'G' => ScreenId.Goodbye,
-            'D' when !session.IsMember && session.Me.DiscordEnabled => ScreenId.SignIn,
-            'L' when session.Me.Authenticated => ScreenId.Logout,
-            '*' when session.IsSysop => ScreenId.SysopConsole,
-            _ => null,
-        };
-    }
-
     /// <inheritdoc />
     protected override void OnInitialized()
     {

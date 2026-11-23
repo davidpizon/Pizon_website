@@ -1,5 +1,4 @@
 using System.Reflection;
-using Pizon.Doors.Sdk;
 using Pizon.Doors.Sdk.Text;
 using Pizon.Web.Client.Screens;
 using Pizon.Web.Client.Screens.Art;
@@ -120,29 +119,7 @@ public sealed class ScreenArtTests
         Assert.Throws<ArgumentException>(() => view.Set(MainMenuArt.Handle, "x"));
         Assert.Throws<ArgumentNullException>(() => view.Set(null!, "x"));
         Assert.Throws<ArgumentNullException>(() => new ScreenView(null!));
-        Assert.Throws<ArgumentOutOfRangeException>(() => view.MoveTo(ConnectArt.Sound, 1));
-        Assert.Equal(Ansi.MoveTo(8, ConnectArt.Sound.Column) + Ansi.Fg(11) + Ansi.Bg(0), view.MoveTo(ConnectArt.Sound));
-    }
-
-    /// <summary>Paging shows a block at a time with a "more" prompt, and stops on Q or Escape.</summary>
-    /// <param name="stop">The key that stops paging.</param>
-    /// <returns>A task that completes when the test is done.</returns>
-    [Theory]
-    [InlineData("q")]
-    [InlineData(DoorKeys.Escape)]
-    public async Task PagesWithinTheBlock(string stop)
-    {
-        var lines = Enumerable.Range(1, 40).Select(i => $"line {i}").ToList();
-        var all = new FakeTerminal().Keys(DoorKeys.Enter, DoorKeys.Enter);
-        var view = new ScreenView(BulletinArt.Instance);
-        Assert.True(await view.PageAsync(all, BulletinArt.Body, BulletinArt.More, lines, CancellationToken.None));
-        Assert.Contains("line 40", all.Plain, StringComparison.Ordinal);
-        Assert.Contains("-- more --", all.Plain, StringComparison.Ordinal);
-        Assert.Empty(view.Get(BulletinArt.More)[0]);
-
-        var early = new FakeTerminal().Keys(stop);
-        Assert.False(await view.PageAsync(early, BulletinArt.Body, BulletinArt.More, lines, CancellationToken.None));
-        Assert.DoesNotContain("line 18", early.Plain, StringComparison.Ordinal);
+        Assert.Throws<ArgumentException>(() => view.RenderField(MainMenuArt.Handle));
     }
 
     /// <summary>The any-key prompt is shown at the cursor slot.</summary>

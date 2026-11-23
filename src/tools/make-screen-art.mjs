@@ -179,7 +179,15 @@ function screens() {
         17: `|08SysOp: |15${slot("SYSOP", 18)}|08 · Node |11${slot("NODE", 7, ">")}|08 of |11${slot("NODES", 7)}|08 · |07${slot("DATE", 17)}`,
         18: `|08Mood: |13${slot("MOOD", 30)}|08 · Location: |13${slot("LOCATION", 26)}`,
         19: `|08Caller: |14${slot("CALLER", 18)}|08 · Level |14${slot("LEVEL", 7)}`,
-        21: `|07${slot("CURSOR", 8)}`,
+        21: `|09${slot("STATUS", 80)}`,
+        22: `|11${slot("PROMPT", 80)}`,
+        23: `  ${slot("OPTIONS", 76)}`,
+        24: `|07${slot("CURSOR", 8)}`,
+      }),
+    },
+    rip: {
+      rows: screen({
+        1: "|08Loading the RIPscrip welcome card...",
       }),
     },
     "main-menu": {

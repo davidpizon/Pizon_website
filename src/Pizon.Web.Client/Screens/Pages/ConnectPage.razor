@@ -1,0 +1,12 @@
+@page "/"
+@layout BbsLayout
+@inherits BbsPage
+@attribute [BbsAccess(ScreenAccess.Public)]
+
+<PageTitle>@RouteTable.SiteName</PageTitle>
+<BbsScreen Art="ConnectArt.Instance" Enter="Transition.None">
+    <Field Slot="ConnectArt.Sound" Value="@(Session.Settings.Sound ? "ON" : "OFF")" />
+    <Hotkey Key="C" OnPress="DialAsync" Label="Connect" />
+    <Hotkey Key="@DoorKeys.Enter" OnPress="DialAsync" />
+    <Hotkey Key="S" OnPress="ToggleSoundAsync" Label="Modem sounds" />
+</BbsScreen>

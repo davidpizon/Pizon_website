@@ -5,8 +5,7 @@ namespace Pizon.Web.Client.Screens.Components;
 
 /// <summary>
 /// A key the enclosing <see cref="BbsScreen"/> answers to (a click on a hotspot in the art sends the same
-/// key). It goes to <see cref="Href"/>, leaves for a <see cref="Screen"/> that has no address, or runs
-/// <see cref="OnPress"/>. Hotkeys are tried in the order they are declared, and only while
+/// key). It runs <see cref="OnPress"/>, then goes to <see cref="Href"/> if it has one. Hotkeys are tried in the order they are declared, and only while
 /// <see cref="When"/> holds. It renders no HTML; the screen's mirror lists it as a link.
 /// </summary>
 public sealed class Hotkey : ComponentBase, IDisposable
@@ -28,10 +27,6 @@ public sealed class Hotkey : ComponentBase, IDisposable
     /// <summary>Gets or sets the address to go to.</summary>
     [Parameter]
     public string? Href { get; set; }
-
-    /// <summary>Gets or sets a screen without an address to leave for (used instead of <see cref="Href"/>).</summary>
-    [Parameter]
-    public ScreenId? Screen { get; set; }
 
     /// <summary>Gets or sets a value indicating whether the hotkey is active.</summary>
     [Parameter]

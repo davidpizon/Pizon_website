@@ -53,7 +53,7 @@ Each area has a `name`, a `description` and `files`. Each file has an 8.3-style 
 
 - **Banner:** `pizon.ans` is plain ANSI (UTF-8 or CP437; a SAUCE record is ignored). It was generated
   with `node src/tools/make-banner.mjs` and can be redrawn in Moebius or PabloDraw. Keep it within
-  80 columns and use 256-color codes for gradients. The welcome screen's copy is baked into
+  80 columns and use 256-color codes for gradients. The login screen draws a copy baked into
   `Screens/Art/welcome.dur`, so rerun `node src/tools/make-screen-art.mjs` after changing it.
 - **RIP card:** `welcome.rip` is generated with `node src/tools/make-welcome-rip.mjs`. Supported
   commands: color, fill style, text size, reset, line, rectangle, bar, circle, oval, polygon, filled
@@ -129,6 +129,38 @@ Problems in the art fail the build, like a mistake in a Razor file:
 | `PZN006` | The art is larger than the 80x25 terminal. |
 | `PZN007` | A bad animation: more than 240 frames, a placeholder (`@`) in animated art, or a broken `.anim.json` (not JSON, an unknown setting, a bad range name or bounds, or a sidecar for one-frame art). |
 | `PZN008` | The name clashes with a member of the art class (for example `NAME`, `TEXT`, `INSTANCE`). |
+
+### Adding a screen
+
+A screen is a drawing plus a page that binds data to it.
+
+1. **Draw it.** Add a screen to `screens()` in `src/tools/make-screen-art.mjs` (25 rows of pipe-code text with
+   the placeholders typed in) and run `node src/tools/make-screen-art.mjs`, or draw `Screens/Art/<name>.dur`
+   in Durdraw. Building compiles it to `<Name>Art`.
+2. **Write the page.** Add `Screens/Pages/<Name>Page.razor` and its `.razor.cs` (a `<summary>` on the
+   partial class is required):
+
+   ```razor
+   @page "/hello"
+   @layout BbsLayout
+   @inherits BbsPage
+   @attribute [BbsAccess(ScreenAccess.Public)]
+
+   <PageTitle>@RouteTable.Tab("Hello")</PageTitle>
+   <BbsScreen Art="HelloArt.Instance">
+       <Field Slot="HelloArt.Caller" Value="@PipeCodes.Escape(Session.Handle)" />
+       <Hotkey Key="Q" Href="/menu" Label="Back to the main menu" />
+       <Hotkey Key="@DoorKeys.Escape" Href="/menu" />
+   </BbsScreen>
+   ```
+
+   Visitor text goes through `PipeCodes.Escape`. Bind every slot but `@CURSOR@` (a test checks), and
+   escape nothing you write yourself.
+3. **Give it an address.** Add the route to `RouteTable.All` with the same access as `[BbsAccess]`
+   (`Public`, `Member` or `Sysop`), and `Nested: true` if pages below it (`/hello/{n}`) belong to it.
+   Tests check that routes, `@page`s and access agree.
+4. **Link to it** from another page's `<Hotkey Href="/hello">`, and test it with `PageHarness` in
+   `src/tests/Pizon.Web.Client.Tests` (`Show<HelloPage>()`, then `RunAsync(keys)`).
 
 ## Terminal glow
 

@@ -8,6 +8,7 @@ using Pizon.Web.Client.Layout;
 using Pizon.Web.Client.Pages;
 using Pizon.Web.Client.Screens;
 using Pizon.Web.Client.Screens.Hosting;
+using Pizon.Web.Client.Screens.Pages;
 using Pizon.Web.Client.Services;
 using Pizon.Web.Client.Terminal;
 
@@ -222,7 +223,7 @@ public sealed class ComponentTests : IAsyncDisposable
     /// <inheritdoc />
     public ValueTask DisposeAsync() => context.DisposeAsync();
 
-    /// <summary>The BBS layout renders the terminal and starts the BBS at the Connect screen.</summary>
+    /// <summary>The BBS layout renders the terminal, attaches it to the host and starts the call.</summary>
     [Fact]
     public void LayoutStartsTheBbs()
     {
@@ -230,41 +231,27 @@ public sealed class ComponentTests : IAsyncDisposable
         Assert.NotNull(cut.Find(".term[role=log]"));
         Assert.NotNull(cut.Find("canvas.rip"));
         Assert.Contains("BODY", cut.Markup, StringComparison.Ordinal);
-        cut.WaitForAssertion(() => Assert.NotEmpty(module.Invocations["write"]));
+        var host = context.Services.GetRequiredService<BbsHost>();
+        cut.WaitForAssertion(() => Assert.True(host.Ready.IsCompleted));
         Assert.Single(module.Invocations["init"]);
     }
 
-    /// <summary>The tab title follows the address: each screen has its own, the dial-in page is just the site name.</summary>
-    [Fact]
-    public void HomeTitleFollowsTheAddress()
-    {
-        var nav = context.Services.GetRequiredService<NavigationManager>();
-        var cut = context.Render<Home>();
-        Assert.Equal("PIZON BBS", cut.Instance.Title);
-        nav.NavigateTo("/bulletins");
-        cut.WaitForAssertion(() => Assert.Equal("System bulletins - PIZON BBS", cut.Instance.Title));
-        Assert.Equal("PIZON BBS", Home.TitleFor("/nowhere"));
-    }
-
     /// <summary>
-    /// Every routed screen is served by an <c>@page</c>: on <see cref="Home"/> for legacy screens, or on a screen
-    /// page for the others (a page screen's own path is served by a page, never by <see cref="Home"/>); and every
-    /// <c>@page</c> belongs to a routed screen.
+    /// Every route is served by a screen page's <c>@page</c>, and every screen page's <c>@page</c> belongs to a
+    /// route (its own, or one under a nested route).
     /// </summary>
     [Fact]
     public void EveryRouteIsServed()
     {
         static IEnumerable<string> Templates(Type t) =>
             t.GetCustomAttributes(typeof(RouteAttribute), inherit: false).Cast<RouteAttribute>().Select(r => r.Template);
-        var home = Templates(typeof(Home)).ToList();
-        var pages = typeof(Home).Assembly.GetTypes()
+        var pages = typeof(ConnectPage).Assembly.GetTypes()
             .Where(t => t.Namespace == "Pizon.Web.Client.Screens.Pages")
             .SelectMany(Templates)
             .ToList();
         Assert.Equal(
             RouteTable.All.Select(r => r.Path).Order(StringComparer.Ordinal),
-            home.Concat(pages.Where(p => !p.Contains('{', StringComparison.Ordinal) && !RouteTable.All.Any(r => r.Nested && p.StartsWith(r.Path + "/", StringComparison.Ordinal)))).Order(StringComparer.Ordinal));
-        Assert.All(RouteTable.All, r => Assert.Equal(BbsApp.PageScreens.Contains(r.Screen), pages.Contains(r.Path)));
+            pages.Where(p => !p.Contains('{', StringComparison.Ordinal) && !RouteTable.All.Any(r => r.Nested && p.StartsWith(r.Path + "/", StringComparison.Ordinal))).Order(StringComparer.Ordinal));
         Assert.All(pages, p => Assert.True(RouteTable.TryResolve(p.Replace("{Number:int}", "2", StringComparison.Ordinal), out _), p));
     }
 

@@ -1,0 +1,7 @@
+@page "/rip"
+@layout BbsLayout
+@inherits BbsPage
+@attribute [BbsAccess(ScreenAccess.Public)]
+
+<PageTitle>@RouteTable.Tab("RIP welcome card")</PageTitle>
+<BbsScreen Art="RipArt.Instance" Enter="Transition.None" OnDrawn="ShowCardAsync" />

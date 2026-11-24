@@ -43,6 +43,25 @@ columns, or 50 beside the cam) and an optional `"cam": true`. Bulletin #2 sets i
 (compiled art, see [Animated art](#animated-art)) plays in a 24×12 box to the right of the text while
 you read, with its busy frames when other callers are online.
 
+In the list, file bulletins use letter keys (A, B, C…, skipping Q and T); their addresses stay
+`/bulletins/{number}`.
+
+## Discord bulletins
+
+When a bot token and channel are configured (see [deploy.md](deploy.md#3b-discord-bulletins-optional)),
+messages in that channel become bulletins, listed above the file bulletins, newest first, on keys 1–9
+and 0 (as many of the newest 10 as fit on the screen).
+
+- Every message gets a fixed number in order of posting: the first ever is **D1**, and its address
+  `/bulletins/d/1` never changes. A deleted message keeps its number.
+- The first line is the title; the rest is the body. A one-line message is its own body.
+- Formatting becomes text: `**bold**` turns white, `#` headers cyan, `-#` small text and `>` quotes
+  gray; links stay as text (`[text](url)` shows `text (url)`); mentions become `@name`, custom emoji
+  `:name:`, timestamps a UTC date; pictures and files become `[image: name]` / `[file: name]` lines.
+- Anyone who can post in the channel can make a bulletin. What they write is escaped, so it can't
+  inject pipe codes.
+- The site checks every 10 minutes. Edits and deletes of the newest posts follow Discord.
+
 ## File areas (`files.json`)
 
 Each area has a `name`, a `description` and `files`. Each file has an 8.3-style `name` (e.g.

@@ -122,6 +122,7 @@ apart). Tests check that the routes, the `@page`s and the `[BbsAccess]` attribut
 | `GET /api/callers/recent` | signed in | Recent callers for the user list. |
 | `GET/POST /api/scores/{door}` | anyone / signed in | Top 10 per door; validated against `doors.json`. |
 | `/api/sysop/*` | SysOp only (else 404) | Moderation queue, pages inbox, delete, ban. |
+| `GET /api/feeds/{feed}`, `GET /api/feeds/{feed}/{number}` | anyone | Discord feeds: newest 10 saved posts, or one by number. |
 | `GET /plain` | anyone | A plain-HTML version of the content (accessibility, crawlers). |
 | `/hubs/node` | anyone | Presence: node numbers and online count. |
 | `GET /healthz` | anyone | Health check (Caddy, deploy script). |
@@ -130,7 +131,13 @@ Protections: the `X-PIZON-BBS: 1` header on every state change (CSRF), SameSite=
 cookies, per-IP rate limits, a honeypot field, a word filter, approve-first moderation and bans.
 The SysOp is whoever signs in with the Discord user ID in `SysOp__DiscordUserId` (level 255).
 
-Data (SQLite in `App_Data/`): `Users`, `Messages` (pending/approved), `SysopPages`, `Scores`.
+Data (SQLite in `App_Data/`): `Users`, `Messages` (pending/approved), `SysopPages`, `Scores`,
+`FeedPosts` and `FeedStates`.
+
+Discord feeds: `FeedSync` (a hosted service) reads each channel named in `Discord:Feeds` with the bot token
+every `Discord:PollMinutes`, copies new messages into `FeedPosts` with the next number (converted to
+pipe codes by `DiscordText`, which escapes everything the message says), and rechecks the newest 50 for
+edits and deletes. `FeedStates` records whether the last check worked. Without a token, feeds are off.
 Data-protection keys are stored next to the database so cookies survive restarts and redeploys.
 
 ## Presence

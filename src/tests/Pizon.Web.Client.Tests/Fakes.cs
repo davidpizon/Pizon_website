@@ -310,6 +310,12 @@ internal sealed class FakeApi : IBbsApi
     /// <summary>Gets or sets the pages inbox.</summary>
     public ApiResult<IReadOnlyList<SysopPageDto>> Pages { get; set; } = new(ApiStatus.Ok, []);
 
+    /// <summary>Gets or sets the Discord bulletins feed.</summary>
+    public ApiResult<FeedDto> Feed { get; set; } = new(ApiStatus.Ok, FeedDto.None);
+
+    /// <summary>Gets the Discord posts that can be opened by number.</summary>
+    public List<FeedPostDto> FeedPosts { get; } = [];
+
     /// <summary>Gets every write call, as "name:argument".</summary>
     public List<string> Calls { get; } = [];
 
@@ -377,6 +383,15 @@ internal sealed class FakeApi : IBbsApi
 
     /// <inheritdoc />
     public Task<ApiResult> BanUserAsync(long userId, CancellationToken cancellationToken = default) => Record($"ban:{userId}");
+
+    /// <inheritdoc />
+    public Task<ApiResult<FeedDto>> GetFeedAsync(string feed, CancellationToken cancellationToken = default) => Task.FromResult(Feed);
+
+    /// <inheritdoc />
+    public Task<ApiResult<FeedPostDto>> GetFeedPostAsync(string feed, int number, CancellationToken cancellationToken = default) =>
+        Task.FromResult(FeedPosts.FirstOrDefault(p => p.Number == number) is { } post
+            ? new ApiResult<FeedPostDto>(ApiStatus.Ok, post)
+            : new ApiResult<FeedPostDto>(ApiStatus.Forbidden, null));
 
     private Task<ApiResult> Record(string call)
     {

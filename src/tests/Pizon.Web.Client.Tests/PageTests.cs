@@ -253,11 +253,11 @@ public sealed class BulletinPageTests
     {
         await using var p = new PageHarness(path: "/bulletins");
         var cut = p.Show<BulletinsPage>();
-        Assert.Equal("/menu", await p.RunAsync("9", "1", "T", "q", DoorKeys.Escape));
+        Assert.Equal("/menu", await p.RunAsync("9", "A", "T", "q", DoorKeys.Escape));
 
         Assert.Equal([Transition.Wipe], p.H.Terminal.Transitions);
         Assert.Contains("SYSTEM BULLETINS", p.Plain, StringComparison.Ordinal);
-        Assert.Contains("Bulletin #1: Now", p.Plain, StringComparison.Ordinal);
+        Assert.Contains("[A] Bulletin #1: Now", p.Plain, StringComparison.Ordinal);
         Assert.Contains("(updated today)", p.Plain, StringComparison.Ordinal);
         Assert.Equal([("/bulletins/1", false), ("/bulletins/top", false), ("/menu", false)], p.H.Navigator.Moves);
         Assert.Equal("[T] Top players", cut.Find("a[href='/bulletins/top']").TextContent);
@@ -608,7 +608,7 @@ public sealed class PageModelTests
     public void PagesDeclareAccess()
     {
         var pages = typeof(BbsPage).Assembly.GetTypes().Where(t => t.IsSubclassOf(typeof(BbsPage)) && !t.IsAbstract).ToList();
-        Assert.Equal(23, pages.Count);
+        Assert.Equal(24, pages.Count);
         Assert.All(pages, page =>
         {
             var access = page.GetCustomAttributes(typeof(BbsAccessAttribute), inherit: false).Cast<BbsAccessAttribute>().Single();
@@ -662,6 +662,7 @@ public sealed class PageModelTests
         p.Show<MainMenuPage>();
         p.Show<BulletinsPage>();
         p.Show<BulletinPage>(ps => ps.Add(x => x.Number, 2));
+        p.Show<DiscordBulletinPage>(ps => ps.Add(x => x.Number, 1));
         p.Show<BoardPage>();
         p.Show<FilesPage>();
         p.Show<FileAreaPage>(ps => ps.Add(x => x.Area, "tools"));
@@ -720,4 +721,113 @@ public sealed class PageModelTests
         Assert.Throws<InvalidOperationException>(() => bunit.Render<Hotkey>(ps => ps.Add(x => x.Key, "Q")));
         Assert.Throws<InvalidOperationException>(() => bunit.Render<List>(ps => ps.Add(x => x.Slot, Screens.Art.UsersArt.Body)));
     }
+}
+
+/// <summary>
+/// Tests for Discord bulletins: listed first on number keys, opened by their fixed number, and the offline line.
+/// </summary>
+public sealed class DiscordBulletinPageTests
+{
+    private static readonly DateTimeOffset Posted = new(2026, 11, 20, 18, 0, 0, TimeSpan.Zero);
+
+    /// <summary>Discord posts come first on 1, 2..., the offline line follows them, then the lettered file bulletins.</summary>
+    /// <returns>A task that completes when the test is done.</returns>
+    [Fact]
+    public async Task ListsDiscordPostsFirst()
+    {
+        var h = new Harness();
+        h.Api.Feed = new(ApiStatus.Ok, new FeedDto(true, false, [Post(12, "Server move"), Post(11, "Hello || pipes")]));
+        await using var p = new PageHarness(h, "/bulletins");
+        var cut = p.Show<BulletinsPage>();
+        Assert.Equal("/menu", await p.RunAsync("1", "q"));
+
+        Assert.Contains("[1] Bulletin #D12: Server move", p.Plain, StringComparison.Ordinal);
+        Assert.Contains("[2] Bulletin #D11: Hello | pipes", p.Plain, StringComparison.Ordinal);
+        Assert.Contains("Discord relay offline", p.Plain, StringComparison.Ordinal);
+        Assert.Contains("[A] Bulletin #1: Now", p.Plain, StringComparison.Ordinal);
+        Assert.True(p.Plain.IndexOf("#D11", StringComparison.Ordinal) < p.Plain.IndexOf("relay offline", StringComparison.Ordinal));
+        Assert.True(p.Plain.IndexOf("relay offline", StringComparison.Ordinal) < p.Plain.IndexOf("[A]", StringComparison.Ordinal));
+        Assert.Contains("Bulletin #D11: Hello | pipes", cut.Find("a[href='/bulletins/d/11']").TextContent, StringComparison.Ordinal);
+        Assert.Equal([("/bulletins/d/12", false), ("/menu", false)], p.H.Navigator.Moves);
+    }
+
+    /// <summary>Only as many Discord posts as fit are listed, never more than ten, and the offline line needs a configured feed.</summary>
+    [Fact]
+    public void FitsTheScreen()
+    {
+        var board = new Content.BulletinBoard { Bulletins = [new() { Number = 1, Title = "One" }, new() { Number = 2, Title = "Two" }] };
+        var posts = Enumerable.Range(1, 12).Select(n => Post(n, "P" + n)).Reverse().ToList();
+
+        var (entries, lines) = BulletinsPage.Build(board, new FeedDto(true, true, posts), 12);
+        Assert.Equal(12, lines.Count);
+        Assert.Equal(["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "A", "B"], entries.Select(e => e.Key));
+        Assert.Equal("/bulletins/d/12", entries[0].Href);
+
+        var (offlineEntries, offlineLines) = BulletinsPage.Build(board, new FeedDto(true, false, posts), 5);
+        Assert.Equal(2, offlineEntries.Count(e => e.Href.StartsWith("/bulletins/d/", StringComparison.Ordinal)));
+        Assert.Equal(BulletinsPage.OfflineLine, offlineLines[2]);
+
+        var (_, disabled) = BulletinsPage.Build(board, new FeedDto(false, false, []), 12);
+        Assert.Equal(2, disabled.Count);
+        var (_, tiny) = BulletinsPage.Build(board, new FeedDto(true, true, posts), 1);
+        Assert.Equal(2, tiny.Count);
+    }
+
+    /// <summary>File bulletin keys run A, B, C... and skip Q and T, which the screen already uses.</summary>
+    [Fact]
+    public void FileKeysSkipTakenLetters()
+    {
+        Assert.Equal("A", BulletinsPage.FileKey(0));
+        Assert.Equal("P", BulletinsPage.FileKey(15));
+        Assert.Equal("R", BulletinsPage.FileKey(16));
+        Assert.Equal("U", BulletinsPage.FileKey(18));
+        Assert.Equal("Z", BulletinsPage.FileKey(23));
+        Assert.Null(BulletinsPage.FileKey(24));
+        Assert.Throws<ArgumentOutOfRangeException>(() => BulletinsPage.FileKey(-1));
+    }
+
+    /// <summary>A Discord bulletin shows its fixed number, who posted it and when, then the message.</summary>
+    /// <returns>A task that completes when the test is done.</returns>
+    [Fact]
+    public async Task ReadsADiscordBulletin()
+    {
+        var h = new Harness();
+        h.Api.FeedPosts.Add(Post(12, "Server move") with { EditedAt = Posted.AddHours(1) });
+        await using var p = new PageHarness(h, "/bulletins/d/12");
+        p.Show<DiscordBulletinPage>(ps => ps.Add(x => x.Number, 12));
+        await p.RunAsync("x");
+
+        Assert.Contains("BULLETIN #D12: SERVER MOVE", p.Plain, StringComparison.Ordinal);
+        Assert.Contains("Posted by David", p.Plain, StringComparison.Ordinal);
+        Assert.Contains("edited", p.Plain, StringComparison.Ordinal);
+        Assert.Contains("Body of 12", p.Plain, StringComparison.Ordinal);
+        Assert.Contains("press any key", p.Plain, StringComparison.Ordinal);
+        Assert.Equal([("/bulletins", false)], p.H.Navigator.Moves);
+        p.AssertNoPlaceholders();
+    }
+
+    /// <summary>A post never edited has no "edited" note; long lines wrap to the body width.</summary>
+    [Fact]
+    public void BuildsLines()
+    {
+        var lines = DiscordBulletinPage.Lines(Post(3, "T") with { Lines = [new string('x', 100)] }, 76);
+        Assert.DoesNotContain("edited", lines[0], StringComparison.Ordinal);
+        Assert.Equal(string.Empty, lines[1]);
+        Assert.Equal(4, lines.Count);
+    }
+
+    /// <summary>An unknown or deleted Discord bulletin shows "file not found".</summary>
+    /// <returns>A task that completes when the test is done.</returns>
+    [Fact]
+    public async Task UnknownPostsAreNotFound()
+    {
+        await using var p = new PageHarness(path: "/bulletins/d/99");
+        p.Show<DiscordBulletinPage>(ps => ps.Add(x => x.Number, 99));
+        await p.RunAsync("x");
+        Assert.Contains("FILE NOT FOUND ON THIS DRIVE", p.Plain, StringComparison.Ordinal);
+        Assert.Equal([("/menu", false)], p.H.Navigator.Moves);
+    }
+
+    private static FeedPostDto Post(int number, string title) =>
+        new(number, title, [$"Body of {number}"], "David", Posted, null);
 }

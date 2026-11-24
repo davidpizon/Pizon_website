@@ -208,6 +208,27 @@ public sealed class BbsApiTests
         Assert.All(http.Requests, r => Assert.True(r.Headers.Contains(BbsApi.CsrfHeader)));
     }
 
+    /// <summary>Feeds read the newest posts and single posts by number; a missing post is Forbidden with no value.</summary>
+    /// <returns>A task that completes when the test is done.</returns>
+    [Fact]
+    public async Task ReadsFeeds()
+    {
+        var http = new FakeHttp()
+            .With("api/feeds/bulletins", """{"enabled":true,"online":false,"posts":[{"number":3,"title":"Hi","lines":["a"],"author":"D","postedAt":"2026-11-15T00:00:00Z","editedAt":null}]}""")
+            .With("api/feeds/bulletins/3", """{"number":3,"title":"Hi","lines":["a"],"author":"D","postedAt":"2026-11-15T00:00:00Z","editedAt":null}""");
+        var api = new BbsApi(http.Client());
+
+        var feed = (await api.GetFeedAsync(Feeds.Bulletins)).Value!;
+        Assert.True(feed.Enabled);
+        Assert.False(feed.Online);
+        Assert.Equal("Hi", Assert.Single(feed.Posts).Title);
+        Assert.Equal(3, (await api.GetFeedPostAsync(Feeds.Bulletins, 3)).Value!.Number);
+        var missing = await api.GetFeedPostAsync(Feeds.Bulletins, 4);
+        Assert.Equal(ApiStatus.Forbidden, missing.Status);
+        Assert.Null(missing.Value);
+        Assert.False(FeedDto.None.Enabled);
+    }
+
     /// <summary>Without a server, /api/me falls back to a guest.</summary>
     /// <returns>A task that completes when the test is done.</returns>
     [Fact]

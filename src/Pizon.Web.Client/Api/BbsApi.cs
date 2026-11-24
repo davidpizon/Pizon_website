@@ -91,6 +91,14 @@ public sealed class BbsApi : IBbsApi
     public Task<ApiResult> BanUserAsync(long userId, CancellationToken cancellationToken = default) =>
         SendAsync<object?>(HttpMethod.Post, $"api/sysop/users/{userId}/ban", null, cancellationToken);
 
+    /// <inheritdoc />
+    public Task<ApiResult<FeedDto>> GetFeedAsync(string feed, CancellationToken cancellationToken = default) =>
+        GetAsync<FeedDto>($"api/feeds/{Uri.EscapeDataString(feed)}", cancellationToken);
+
+    /// <inheritdoc />
+    public Task<ApiResult<FeedPostDto>> GetFeedPostAsync(string feed, int number, CancellationToken cancellationToken = default) =>
+        GetAsync<FeedPostDto>($"api/feeds/{Uri.EscapeDataString(feed)}/{number}", cancellationToken);
+
     /// <summary>
     /// Maps an HTTP status code to an <see cref="ApiStatus"/>.
     /// </summary>

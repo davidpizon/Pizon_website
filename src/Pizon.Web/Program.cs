@@ -8,6 +8,7 @@ using Pizon.Web.Data;
 using Pizon.Web.Endpoints;
 using Pizon.Web.Hubs;
 using Pizon.Web.Services;
+using Pizon.Web.Services.Discord;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
@@ -30,6 +31,10 @@ builder.Services.Configure<NotifyOptions>(builder.Configuration.GetSection("Noti
 builder.Services.Configure<TerminalOptions>(builder.Configuration.GetSection("Terminal"));
 builder.Services.AddHttpClient<INotifier, WebhookNotifier>(http => http.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddSingleton<IDoorCatalog, FileDoorCatalog>();
+builder.Services.Configure<DiscordFeedOptions>(builder.Configuration.GetSection("Discord"));
+builder.Services.AddHttpClient<DiscordClient>(http => http.BaseAddress = DiscordClient.ApiBase);
+builder.Services.AddSingleton<FeedSync>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<FeedSync>());
 builder.Services.AddBbsRateLimits();
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
@@ -73,6 +78,7 @@ app.MapBbsAuth();
 app.MapBoardEndpoints();
 app.MapScoreEndpoints();
 app.MapSysopEndpoints();
+app.MapFeedEndpoints();
 app.MapPlainEndpoint();
 app.MapHub<NodeHub>("/" + Pizon.Web.Client.Services.PresenceProtocol.HubPath);
 app.MapRazorComponents<App>()

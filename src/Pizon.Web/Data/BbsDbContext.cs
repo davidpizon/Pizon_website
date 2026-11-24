@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Pizon.Web.Data;
 
 /// <summary>
-/// The BBS database: callers, messages, SysOp pages and door scores (SQLite).
+/// The BBS database: callers, messages, SysOp pages, door scores and relayed Discord posts (SQLite).
 /// </summary>
 /// <param name="options">The context options.</param>
 public sealed class BbsDbContext(DbContextOptions<BbsDbContext> options) : DbContext(options)
@@ -19,6 +19,12 @@ public sealed class BbsDbContext(DbContextOptions<BbsDbContext> options) : DbCon
 
     /// <summary>Gets the door scores.</summary>
     public DbSet<DoorScore> Scores => Set<DoorScore>();
+
+    /// <summary>Gets the saved copies of Discord messages relayed by feeds.</summary>
+    public DbSet<FeedPost> FeedPosts => Set<FeedPost>();
+
+    /// <summary>Gets each feed's last check with Discord.</summary>
+    public DbSet<FeedState> FeedStates => Set<FeedState>();
 
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -50,6 +56,20 @@ public sealed class BbsDbContext(DbContextOptions<BbsDbContext> options) : DbCon
             e.Property(s => s.Door).HasMaxLength(32);
             e.Property(s => s.Day).HasMaxLength(10);
             e.HasOne(s => s.User).WithMany().HasForeignKey(s => s.UserId);
+        });
+        modelBuilder.Entity<FeedPost>(e =>
+        {
+            e.HasIndex(p => new { p.Feed, p.MessageId }).IsUnique();
+            e.HasIndex(p => new { p.Feed, p.Number }).IsUnique();
+            e.Property(p => p.Feed).HasMaxLength(32);
+            e.Property(p => p.MessageId).HasMaxLength(24);
+            e.Property(p => p.Title).HasMaxLength(400);
+            e.Property(p => p.Author).HasMaxLength(200);
+        });
+        modelBuilder.Entity<FeedState>(e =>
+        {
+            e.HasKey(f => f.Feed);
+            e.Property(f => f.Feed).HasMaxLength(32);
         });
     }
 }
@@ -176,4 +196,55 @@ public sealed class DoorScore
 
     /// <summary>Gets or sets when the score last changed (UTC).</summary>
     public DateTime UpdatedAt { get; set; }
+}
+
+/// <summary>
+/// The saved copy of one Discord message relayed by a feed, already turned into pipe-code text.
+/// </summary>
+public sealed class FeedPost
+{
+    /// <summary>Gets or sets the row id.</summary>
+    public long Id { get; set; }
+
+    /// <summary>Gets or sets the feed (for example <c>bulletins</c>).</summary>
+    public string Feed { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the Discord message id (a snowflake, as text).</summary>
+    public string MessageId { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the fixed number in the feed: the first post ever is 1.</summary>
+    public int Number { get; set; }
+
+    /// <summary>Gets or sets the title (pipe-code text).</summary>
+    public string Title { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the body lines (pipe-code text), separated by line feeds.</summary>
+    public string Body { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets who posted it (pipe-code text).</summary>
+    public string Author { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets when it was posted (UTC).</summary>
+    public DateTime PostedAt { get; set; }
+
+    /// <summary>Gets or sets when it was last edited (UTC), if ever.</summary>
+    public DateTime? EditedAt { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the message was deleted on Discord (its number stays taken).</summary>
+    public bool Deleted { get; set; }
+}
+
+/// <summary>
+/// A feed's last check with Discord.
+/// </summary>
+public sealed class FeedState
+{
+    /// <summary>Gets or sets the feed.</summary>
+    public string Feed { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets when the feed was last checked (UTC).</summary>
+    public DateTime LastSyncAt { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the last check worked.</summary>
+    public bool LastSyncOk { get; set; }
 }

@@ -4,17 +4,16 @@
 @attribute [BbsAccess(ScreenAccess.Public)]
 
 <PageTitle>@RouteTable.Tab("System bulletins")</PageTitle>
-@if (board is not null)
+@if (entries is not null)
 {
     <BbsScreen Art="BulletinsArt.Instance">
         <List Slot="BulletinsArt.List" Items="items" />
         <Hotkey Key="Q" Href="/menu" Label="Back to the main menu" />
         <Hotkey Key="@DoorKeys.Escape" Href="/menu" />
         <Hotkey Key="T" Href="/bulletins/top" Label="Top players" />
-        @foreach (var bulletin in board.Bulletins)
+        @foreach (var entry in entries)
         {
-            var number = Number(bulletin);
-            <Hotkey @key="number" Key="@number" Href="@($"/bulletins/{number}")" Label="@($"Bulletin #{number}: {bulletin.Title}")" />
+            <Hotkey @key="entry.Key" Key="@entry.Key" Href="@entry.Href" Label="@entry.Label" />
         }
     </BbsScreen>
 }

@@ -3,6 +3,7 @@
 // Optional settings (AppHost user-secrets or environment):
 //   Parameters:discord-client-id / Parameters:discord-client-secret  - enables Discord sign-in
 //   Parameters:sysop-discord-id                                      - who gets the SysOp console
+//   Parameters:discord-bot-token / Parameters:discord-bulletins-channel - relays a Discord channel as bulletins
 //   Pizon:UseNtfy = true                                             - runs a local ntfy container (needs Docker)
 //   Pizon:UseSqliteWeb = true                                        - adds the SQLite Web DB viewer (a container)
 // Containers need a running Docker or Podman; Aspire refuses to start when the model has a container and
@@ -31,6 +32,12 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration["Parameters:discord-client-
 if (!string.IsNullOrWhiteSpace(builder.Configuration["Parameters:sysop-discord-id"]))
 {
     web.WithEnvironment("SysOp__DiscordUserId", builder.AddParameter("sysop-discord-id"));
+}
+
+if (!string.IsNullOrWhiteSpace(builder.Configuration["Parameters:discord-bot-token"]))
+{
+    web.WithEnvironment("Discord__BotToken", builder.AddParameter("discord-bot-token", secret: true))
+        .WithEnvironment("Discord__Feeds__Bulletins__ChannelId", builder.AddParameter("discord-bulletins-channel"));
 }
 
 if (IsOn("Pizon:UseNtfy"))

@@ -161,3 +161,38 @@ public static partial class Limits
     [GeneratedRegex("^[A-Za-z0-9_-]{3,16}$", RegexOptions.CultureInvariant)]
     private static partial Regex HandleRegex();
 }
+
+/// <summary>
+/// The Discord channel feeds the server can relay (each one a channel named in the <c>Discord:Feeds</c> settings).
+/// </summary>
+public static class Feeds
+{
+    /// <summary>The feed shown as SYSTEM BULLETINS.</summary>
+    public const string Bulletins = "bulletins";
+
+    /// <summary>How many posts a feed listing returns.</summary>
+    public const int ListSize = 10;
+}
+
+/// <summary>
+/// One Discord message relayed by a feed.
+/// </summary>
+/// <param name="Number">The post's fixed number in the feed: the first post ever is 1.</param>
+/// <param name="Title">The title (the message's first line), as pipe-code text.</param>
+/// <param name="Lines">The body lines, as pipe-code text.</param>
+/// <param name="Author">Who posted it, as pipe-code text.</param>
+/// <param name="PostedAt">When it was posted.</param>
+/// <param name="EditedAt">When it was last edited, if ever.</param>
+public sealed record FeedPostDto(int Number, string Title, IReadOnlyList<string> Lines, string Author, DateTimeOffset PostedAt, DateTimeOffset? EditedAt);
+
+/// <summary>
+/// A feed's newest posts (<c>GET /api/feeds/{feed}</c>).
+/// </summary>
+/// <param name="Enabled">Whether the feed is configured on this server.</param>
+/// <param name="Online">Whether the last check with Discord worked (saved posts are returned either way).</param>
+/// <param name="Posts">The newest posts, newest first.</param>
+public sealed record FeedDto(bool Enabled, bool Online, IReadOnlyList<FeedPostDto> Posts)
+{
+    /// <summary>Gets an empty, disabled feed: what screens use when the server can't be reached.</summary>
+    public static FeedDto None { get; } = new(false, true, []);
+}

@@ -1,0 +1,23 @@
+@page "/bulletins/d/{Number:int}"
+@layout BbsLayout
+@inherits BbsPage
+@attribute [BbsAccess(ScreenAccess.Public)]
+
+@if (!loaded)
+{
+    <PageTitle>@RouteTable.Tab("System bulletins")</PageTitle>
+}
+else if (post is null)
+{
+    <FileNotFound />
+}
+else
+{
+    <PageTitle>@RouteTable.Tab($"Bulletin #D{Number}")</PageTitle>
+    <BbsScreen @key="Number" Art="BulletinArt.Instance" Prompt="@prompt" OnKey="@(_ => Host.Navigate("/bulletins"))">
+        <Field Slot="BulletinArt.Title" Value="@($"BULLETIN #D{Number}: {post.Title.ToUpperInvariant()}")" />
+        <List Slot="BulletinArt.Body" Items="lines" More="BulletinArt.More" OnLastPage="LastPage" />
+        <Hotkey Key="Q" Href="/bulletins" Label="Back to the bulletins" />
+        <Hotkey Key="@DoorKeys.Escape" Href="/bulletins" />
+    </BbsScreen>
+}

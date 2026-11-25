@@ -324,7 +324,7 @@ public sealed class RoutedPageTests : IAsyncDisposable
 
         terminal.OnKey("1");
         Until(() => nav.Uri.EndsWith("/bulletins", StringComparison.Ordinal) && Count("SYSTEM BULLETINS") == 1);
-        terminal.OnKey("1");
+        terminal.OnKey("A");
         Until(() => nav.Uri.EndsWith("/bulletins/1", StringComparison.Ordinal) && Count("BULLETIN #1: NOW") == 1);
 
         nav.NavigateTo("/bulletins");

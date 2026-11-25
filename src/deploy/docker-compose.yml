@@ -3,7 +3,8 @@
 #   caddy  - reverse proxy with automatic HTTPS for pizon.com (www redirects to the apex)
 #   backup - nightly SQLite .backup into ./backups, keeping 14 days (backup.sh)
 # Secrets come from ~/pizon/.env, which is never committed: Discord__ClientId, Discord__ClientSecret,
-# SysOp__DiscordUserId, Notify__WebhookUrl (see .env.example).
+# SysOp__DiscordUserId, Discord__BotToken, Discord__Feeds__Bulletins__ChannelId, Notify__WebhookUrl
+# (see .env.example).
 
 services:
   web:

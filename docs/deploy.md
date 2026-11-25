@@ -40,6 +40,21 @@ turns off SSH password login and enables automatic security updates. Deploy as `
 4. Find your own Discord user ID (Settings → Advanced → Developer Mode, then right-click your name →
    Copy User ID). That account becomes the SysOp.
 
+### 3b. Discord bulletins (optional)
+
+Posts in a Discord channel can show up as SYSTEM BULLETINS (see [content.md](content.md#discord-bulletins)).
+Sign-in can't read channels, so this uses a bot on the same Discord application:
+
+1. Developer Portal → your application → **Bot**. Click **Reset Token** and copy it (it is shown once).
+2. On the same page, turn on **Message Content Intent** (without it Discord sends empty messages).
+3. **OAuth2 → URL Generator**: tick `bot`, then the bot permissions **View Channels** and
+   **Read Message History** only. Open the generated link and add the bot to your server.
+4. In the channel's settings, make sure the bot (or its role) can view the channel and read its history.
+5. With Developer Mode on, right-click the channel → **Copy Channel ID**.
+
+Set `Discord__BotToken` and `Discord__Feeds__Bulletins__ChannelId`. The site checks every 10 minutes
+(`Discord__PollMinutes`), keeps its own copy of the posts, and shows "Discord relay offline" when a check fails.
+
 ### 4. Notifications
 
 Install the **ntfy** app on your phone and subscribe to a long random topic name, e.g.
@@ -52,7 +67,8 @@ ssh bbs@<vps-ip>
 ```
 
 Create `~/pizon/.env` from `src/deploy/.env.example` and fill in `Discord__ClientId`,
-`Discord__ClientSecret`, `SysOp__DiscordUserId` and `Notify__WebhookUrl`. It is never committed.
+`Discord__ClientSecret`, `SysOp__DiscordUserId`, `Notify__WebhookUrl` and, for Discord bulletins,
+`Discord__BotToken` and `Discord__Feeds__Bulletins__ChannelId`. It is never committed.
 Non-secret settings can go there too, such as `Terminal__GlowBlur` (see [content.md](content.md#terminal-glow)).
 
 Locally, the same values go in user-secrets:

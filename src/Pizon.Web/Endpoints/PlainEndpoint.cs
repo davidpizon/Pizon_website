@@ -2,8 +2,12 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Options;
 using Pizon.Doors.Sdk.Text;
+using Pizon.Web.Client.Api;
 using Pizon.Web.Client.Content;
+using Pizon.Web.Data;
+using Pizon.Web.Services.Discord;
 
 namespace Pizon.Web.Endpoints;
 
@@ -25,15 +29,20 @@ public static class PlainEndpoint
     /// <param name="app">The route builder.</param>
     public static void MapPlainEndpoint(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/plain", (IWebHostEnvironment env) => Results.Content(Render(env.WebRootFileProvider), "text/html; charset=utf-8"));
+        app.MapGet("/plain", async (IWebHostEnvironment env, BbsDbContext db, IOptions<DiscordFeedOptions> options, CancellationToken cancellationToken) =>
+        {
+            var feed = await FeedEndpoints.ReadAsync(db, options.Value, Feeds.Bulletins, Feeds.ListSize, cancellationToken);
+            return Results.Content(Render(env.WebRootFileProvider, feed.Posts), "text/html; charset=utf-8");
+        });
     }
 
     /// <summary>
-    /// Renders the plain page from the content files.
+    /// Renders the plain page from the content files and the Discord bulletins.
     /// </summary>
     /// <param name="files">The web root files.</param>
+    /// <param name="discord">The newest Discord bulletins, newest first.</param>
     /// <returns>The HTML.</returns>
-    public static string Render(IFileProvider files)
+    public static string Render(IFileProvider files, IReadOnlyList<FeedPostDto>? discord = null)
     {
         ArgumentNullException.ThrowIfNull(files);
         var board = Read<BulletinBoard>(files, "content/bulletins.json") ?? new BulletinBoard();
@@ -45,6 +54,15 @@ public static class PlainEndpoint
             .Append("a{color:#00ffff}h1,h2{color:#ffff00}</style></head><body>")
             .Append("<h1>PIZON BBS</h1><p>").Append(html.Encode(board.Tagline)).Append("</p>")
             .Append("<p>SysOp: ").Append(html.Encode(board.Sysop)).Append(". <a href=\"/\">Dial in to the full BBS</a>.</p>");
+        foreach (var post in discord ?? [])
+        {
+            sb.Append("<h2>Bulletin #D").Append(post.Number).Append(": ").Append(html.Encode(PipeCodes.StripToPlain(post.Title))).Append("</h2>");
+            foreach (var line in post.Lines)
+            {
+                sb.Append("<p>").Append(html.Encode(PipeCodes.StripToPlain(line))).Append("</p>");
+            }
+        }
+
         foreach (var b in board.Bulletins)
         {
             sb.Append("<h2>Bulletin #").Append(b.Number).Append(": ").Append(html.Encode(b.Title)).Append("</h2>");

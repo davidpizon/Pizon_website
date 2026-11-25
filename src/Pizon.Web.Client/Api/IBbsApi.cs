@@ -93,4 +93,17 @@ public interface IBbsApi
     /// <param name="cancellationToken">Cancels the request.</param>
     /// <returns>The result.</returns>
     Task<ApiResult> BanUserAsync(long userId, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets a Discord feed's newest posts (anyone, guests included).</summary>
+    /// <param name="feed">The feed, for example <see cref="Feeds.Bulletins"/>.</param>
+    /// <param name="cancellationToken">Cancels the request.</param>
+    /// <returns>The feed.</returns>
+    Task<ApiResult<FeedDto>> GetFeedAsync(string feed, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets one post of a Discord feed by its fixed number.</summary>
+    /// <param name="feed">The feed.</param>
+    /// <param name="number">The post's number.</param>
+    /// <param name="cancellationToken">Cancels the request.</param>
+    /// <returns>The post; <see cref="ApiStatus.Forbidden"/> when there is no such post.</returns>
+    Task<ApiResult<FeedPostDto>> GetFeedPostAsync(string feed, int number, CancellationToken cancellationToken = default);
 }

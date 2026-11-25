@@ -109,15 +109,18 @@ internal sealed class BbsFactory : WebApplicationFactory<Program>
     private static int ip;
     private readonly string directory = Path.Combine(Path.GetTempPath(), "pizon-bbs-tests", Guid.NewGuid().ToString("N"));
     private readonly Dictionary<string, string?> settings;
+    private readonly Action<IServiceCollection>? services;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="BbsFactory"/> class.
     /// </summary>
     /// <param name="settings">Extra configuration (for example Discord settings).</param>
     /// <param name="environment">The environment name.</param>
-    public BbsFactory(Dictionary<string, string?>? settings = null, string environment = "Development")
+    /// <param name="services">Extra service registrations, applied last.</param>
+    public BbsFactory(Dictionary<string, string?>? settings = null, string environment = "Development", Action<IServiceCollection>? services = null)
     {
         this.settings = settings ?? [];
+        this.services = services;
         EnvironmentName = environment;
     }
 
@@ -183,6 +186,13 @@ internal sealed class BbsFactory : WebApplicationFactory<Program>
     {
         ArgumentNullException.ThrowIfNull(builder);
         builder.UseEnvironment(EnvironmentName);
+
+        // Development loads the developer's user-secrets; tests must never see real Discord settings, so these
+        // are blanked first and a test's own settings below win over the blanks.
+        foreach (var key in new[] { "Discord:ClientId", "Discord:ClientSecret", "Discord:BotToken", "SysOp:DiscordUserId" })
+        {
+            builder.UseSetting(key, string.Empty);
+        }
         builder.UseSetting("ConnectionStrings:bbsdb", $"Data Source={DatabasePath}");
         foreach (var (key, value) in settings)
         {
@@ -194,6 +204,7 @@ internal sealed class BbsFactory : WebApplicationFactory<Program>
             services.AddSingleton<INotifier>(Notifier);
             services.AddSingleton<IDoorCatalog>(new TestCatalog());
             services.AddSingleton<TimeProvider>(Clock);
+            this.services?.Invoke(services);
         });
     }
 

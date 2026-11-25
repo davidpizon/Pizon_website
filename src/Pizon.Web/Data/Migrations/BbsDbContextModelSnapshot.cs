@@ -15,7 +15,7 @@ partial class BbsDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261116070218_InitialCreate";
+    public override string LastMigrationId => "20261124064100_DiscordFeeds";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -130,6 +130,76 @@ partial class BbsDbContextModelSnapshot : ModelSnapshot
                     .IsUnique();
 
                 b.ToTable("Scores");
+            });
+
+        modelBuilder.Entity("Pizon.Web.Data.FeedPost", b =>
+            {
+                b.Property<long>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Author")
+                    .IsRequired()
+                    .HasMaxLength(200)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Body")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<bool>("Deleted")
+                    .HasColumnType("INTEGER");
+
+                b.Property<DateTime?>("EditedAt")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Feed")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("MessageId")
+                    .IsRequired()
+                    .HasMaxLength(24)
+                    .HasColumnType("TEXT");
+
+                b.Property<int>("Number")
+                    .HasColumnType("INTEGER");
+
+                b.Property<DateTime>("PostedAt")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Title")
+                    .IsRequired()
+                    .HasMaxLength(400)
+                    .HasColumnType("TEXT");
+
+                b.HasKey("Id");
+
+                b.HasIndex("Feed", "MessageId")
+                    .IsUnique();
+
+                b.HasIndex("Feed", "Number")
+                    .IsUnique();
+
+                b.ToTable("FeedPosts");
+            });
+
+        modelBuilder.Entity("Pizon.Web.Data.FeedState", b =>
+            {
+                b.Property<string>("Feed")
+                    .HasMaxLength(32)
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime>("LastSyncAt")
+                    .HasColumnType("TEXT");
+
+                b.Property<bool>("LastSyncOk")
+                    .HasColumnType("INTEGER");
+
+                b.HasKey("Feed");
+
+                b.ToTable("FeedStates");
             });
 
         modelBuilder.Entity("Pizon.Web.Data.SysopPage", b =>
